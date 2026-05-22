@@ -29,6 +29,9 @@ export class VideoOverlay {
   private presentationProbePending = false;
   private presentationProbeAttempts = 0;
   private shouldHideNativeVideo = false;
+  private frameGenerationEnabled = false;
+  private frameGenerationTargetFps = 60;
+  private nextGeneratedFrameAt = 0;
 
   constructor(private readonly video: HTMLVideoElement) {
     this.canvas = document.createElement('canvas');
@@ -58,6 +61,14 @@ export class VideoOverlay {
     const settings = siteResolution.settings;
     this.pipeline = await createPipeline(this.canvas, this.video, settings);
     this.shouldHideNativeVideo = settings.enabled && this.pipeline.status.backend !== 'disabled';
+    this.frameGenerationEnabled =
+      settings.frameGenerationEnabled && this.pipeline.status.backend !== 'disabled';
+    this.frameGenerationTargetFps = settings.frameGenerationTargetFps;
+    if (this.frameGenerationEnabled) {
+      Object.assign(this.pipeline.status, {
+        frameGeneration: `target ${String(this.frameGenerationTargetFps)} fps`,
+      });
+    }
     if (siteResolution.reason === 'block-list' || siteResolution.reason === 'allow-list-miss') {
       this.pipeline.status.reason =
         siteResolution.reason === 'block-list'
@@ -103,6 +114,13 @@ export class VideoOverlay {
       return;
     }
 
+    if (this.frameGenerationEnabled) {
+      this.animationFrameHandle = requestAnimationFrame((now) => {
+        this.renderFrame(now);
+      });
+      return;
+    }
+
     if ('requestVideoFrameCallback' in this.video) {
       this.frameCallbackHandle = this.video.requestVideoFrameCallback(() => {
         this.renderFrame();
@@ -119,9 +137,18 @@ export class VideoOverlay {
     return this.disposed;
   }
 
-  private renderFrame(): void {
+  private renderFrame(now = performance.now()): void {
     if (this.disposed) {
       return;
+    }
+
+    if (this.frameGenerationEnabled) {
+      const minimumFrameIntervalMs = 1000 / this.frameGenerationTargetFps;
+      if (now + 0.5 < this.nextGeneratedFrameAt) {
+        this.scheduleFrame();
+        return;
+      }
+      this.nextGeneratedFrameAt = now + minimumFrameIntervalMs;
     }
 
     if (!this.video.isConnected || this.video.readyState === HTMLMediaElement.HAVE_NOTHING) {

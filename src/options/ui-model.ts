@@ -42,6 +42,7 @@ const IMPLEMENTED_MODES = new Set<UpscalerMode>([
 
 export interface ModeControlState {
   animeVisible: boolean;
+  frameGenerationVisible: boolean;
   implemented: boolean;
   ravuVisible: boolean;
   scaleVisible: boolean;
@@ -62,6 +63,7 @@ export const getModeControlState = (mode: UpscalerMode): ModeControlState => {
 
   return {
     animeVisible: mode === 'anime',
+    frameGenerationVisible: !isNone,
     implemented,
     ravuVisible: mode === 'neural-pro',
     scaleVisible: !isNone && !isSharpen,

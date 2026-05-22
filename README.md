@@ -2,7 +2,7 @@
 
 Metal-tuned GPU video upscaling for Chrome on macOS. The project targets Manifest V3, WebGPU through Dawn/Tint/Metal, and a WebGL2 fallback for the fast modes.
 
-This repository is being built in ordered milestones. The current build mounts a video overlay, routes Auto, Crisp, Sharpen, Anime, and Smooth through working shader paths, persists global and per-site settings, and exposes a HUD with backend, mode, resolution, FPS, and status details. Neural-Lite and Neural-Pro have attribution-aware disabled skeletons until their real shader ports land.
+This repository is being built in ordered milestones. The current build mounts a video overlay, routes Auto, Crisp, Sharpen, Anime, Smooth, and experimental WebGL2 filters through working shader paths, persists global and per-site settings, and exposes a HUD with backend, mode, resolution, FPS, frame-generation target, and status details. Neural-Lite and Neural-Pro have attribution-aware disabled skeletons until their real shader ports land.
 
 ## Install for Development
 
@@ -40,7 +40,9 @@ pnpm dev
 
 The content script finds visible `<video>` elements, mounts a pointer-transparent canvas over the video box, resolves global settings plus allow/block/site overrides for the current hostname, and hands frames to a reusable upscaler pipeline. The original video is kept in the page for audio, controls, captions, fullscreen, and site event handling, then visually hidden while the overlay presents processed frames. Blocked or allow-list-missed sites keep the original video visible and show the disable reason in the HUD.
 
-WebGPU is preferred on macOS Chrome 121+; WebGL2 is retained as a fallback for Crisp and Sharpen. The current WebGPU paths upload frames with `copyExternalImageToTexture`, reuse GPU resources, validate WGSL through Tint to MSL, and use `8x8x1` compute workgroups where compute is active. Crisp uses `shader-f16` when available and falls back to f32.
+WebGPU is preferred on macOS Chrome 121+; WebGL2 is retained as a fallback for Crisp and Sharpen. The current WebGPU paths upload frames with `copyExternalImageToTexture`, reuse GPU resources, validate WGSL through Tint to MSL, and use `8x8x1` compute workgroups where compute is active. Crisp currently uses the f32 quality shader while the updated f16 port is revalidated.
+
+Experimental frame generation is a presentation pacing option: it asks the overlay to render at a 60 fps or 120 fps target instead of waiting only for decoded video frame callbacks. This is useful for responsiveness testing and display pacing, but it is not optical-flow motion interpolation yet.
 
 ## Verification Status
 
@@ -60,6 +62,7 @@ MetalFX is native-only and is not reachable from WebGPU, so this extension ships
 - DRM/EME video such as Netflix, Disney+, HBO Max, and Prime Video cannot be read from canvas and cannot be upscaled.
 - Cross-origin video without CORS support taints canvas uploads and must be disabled cleanly.
 - HTML5 video exposes no motion vectors or depth, so this cannot fully match temporal ML approaches like RTX Video Super Resolution.
+- Frame generation currently targets presentation FPS by re-rendering available decoded frames; true optical-flow interpolation is future work.
 - Neural-Pro is expected to be heavy on base M1 systems at 1080p to 4K, especially at 60 fps.
 
 ## Benchmarks

@@ -1,6 +1,7 @@
 import {
   DEFAULT_SETTINGS,
   SCALE_FACTORS,
+  FRAME_GENERATION_TARGETS,
   UPSCALER_MODES,
   type UpscalerSettings,
 } from './modes';
@@ -46,6 +47,7 @@ export const DEFAULT_SITE_RULES: SiteRulesState = {
 };
 
 const VALID_SCALES = new Set<number>(SCALE_FACTORS);
+const VALID_FRAME_GENERATION_TARGETS = new Set<number>(FRAME_GENERATION_TARGETS);
 const VALID_MODES = new Set<string>(UPSCALER_MODES);
 
 export const normalizeHostname = (input: string): string => {
@@ -184,6 +186,17 @@ export const sanitizeSiteSettingsOverride = (
     override.ravuVariant === 'lite'
   ) {
     sanitized.ravuVariant = override.ravuVariant;
+  }
+
+  if (typeof override.frameGenerationEnabled === 'boolean') {
+    sanitized.frameGenerationEnabled = override.frameGenerationEnabled;
+  }
+
+  if (
+    typeof override.frameGenerationTargetFps === 'number' &&
+    VALID_FRAME_GENERATION_TARGETS.has(override.frameGenerationTargetFps)
+  ) {
+    sanitized.frameGenerationTargetFps = override.frameGenerationTargetFps;
   }
 
   if (typeof override.forceWebGL2 === 'boolean') {

@@ -1,4 +1,10 @@
-import { SCALE_FACTORS, UPSCALER_MODES, type ScaleFactor, type UpscalerMode } from '../common/modes';
+import {
+  FRAME_GENERATION_TARGETS,
+  SCALE_FACTORS,
+  UPSCALER_MODES,
+  type ScaleFactor,
+  type UpscalerMode,
+} from '../common/modes';
 import { loadSettings, patchSettings } from '../common/storage';
 import './style.css';
 
@@ -56,6 +62,12 @@ const scale = document.querySelector<HTMLSelectElement>('#scale');
 const fsrSharpness = document.querySelector<HTMLInputElement>('#fsrSharpness');
 const modeNote = getRequiredElement('#modeNote') as HTMLParagraphElement;
 const scaleField = getRequiredElement('#scaleField') as HTMLLabelElement;
+const frameGenerationField = getRequiredElement('#frameGenerationField') as HTMLFieldSetElement;
+const frameGenerationEnabled = getRequiredElement('#frameGenerationEnabled') as HTMLInputElement;
+const frameGenerationTargetField = getRequiredElement(
+  '#frameGenerationTargetField',
+) as HTMLLabelElement;
+const frameGenerationTarget = getRequiredElement('#frameGenerationTarget') as HTMLSelectElement;
 const sharpnessField = getRequiredElement('#sharpnessField') as HTMLLabelElement;
 const sharpnessLabel = getRequiredElement('#sharpnessLabel');
 const sharpnessValue = getRequiredElement('#sharpnessValue') as HTMLOutputElement;
@@ -77,11 +89,16 @@ UPSCALER_MODES.forEach((value) => {
 SCALE_FACTORS.forEach((value) => {
   scale.add(new Option(`${value.toFixed(1)}x`, String(value)));
 });
+FRAME_GENERATION_TARGETS.forEach((value) => {
+  frameGenerationTarget.add(new Option(`${String(value)} fps`, String(value)));
+});
 
 const settings = await loadSettings();
 enabled.checked = settings.enabled;
 mode.value = settings.mode;
 scale.value = String(settings.scale);
+frameGenerationEnabled.checked = settings.frameGenerationEnabled;
+frameGenerationTarget.value = String(settings.frameGenerationTargetFps);
 fsrSharpness.value = String(settings.fsrSharpness);
 animeSubMode.value = settings.animeSubMode;
 ravuVariant.value = settings.ravuVariant;
@@ -99,6 +116,8 @@ const updateModeControls = (): void => {
 
   modeNote.textContent = MODE_NOTES[selectedMode];
   scaleField.hidden = isNone || isSharpen;
+  frameGenerationField.hidden = isNone;
+  frameGenerationTargetField.hidden = !frameGenerationEnabled.checked;
   sharpnessField.hidden = isNone || isSmooth || isAnime || isFunFilter;
   sharpnessLabel.textContent = isSharpen ? 'CAS sharpness' : 'FSR sharpness';
   sharpnessValue.value = sharpness.toFixed(2);
@@ -113,7 +132,7 @@ const updateModeControls = (): void => {
       : isNone
         ? 'The extension stays enabled, but the native video is passed through unchanged.'
         : isCrispLike
-        ? 'Crisp uses WebGPU first and falls back to WebGL2.'
+          ? 'Crisp uses WebGPU first and falls back to WebGL2.'
         : isAnime
           ? 'Anime requires WebGPU and uses the selected Anime4K sub-mode.'
           : isFunFilter
@@ -135,6 +154,16 @@ mode.addEventListener('change', () => {
 
 scale.addEventListener('change', () => {
   void patchSettings({ scale: Number(scale.value) as ScaleFactor });
+});
+
+frameGenerationEnabled.addEventListener('change', () => {
+  void patchSettings({ frameGenerationEnabled: frameGenerationEnabled.checked });
+  updateModeControls();
+});
+
+frameGenerationTarget.addEventListener('change', () => {
+  const next = Number(frameGenerationTarget.value) === 120 ? 120 : 60;
+  void patchSettings({ frameGenerationTargetFps: next });
 });
 
 fsrSharpness.addEventListener('input', () => {

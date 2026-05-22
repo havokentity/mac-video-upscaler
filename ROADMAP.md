@@ -15,6 +15,7 @@
 - [x] Add HUD formatting, rendered-FPS sampling, and routed-mode smoke coverage.
 - [x] Add per-site allow/block/rule storage and content-script resolution.
 - [x] Add local benchmark smoke harness with Markdown/JSON output.
+- [x] Add experimental 60/120 fps overlay frame-pacing control.
 - [ ] Port full Neural-Lite / ArtCNN shader.
 - [ ] Port Neural-Pro / RAVU shaders with LGPL headers and NOTICE entries.
 - [ ] Add timestamp-query GPU timing, screenshots, measured Apple Silicon benchmarks, and release notes.
@@ -26,5 +27,6 @@
 ## Longer-Term Ideas
 
 - Temporal accumulation heuristics that work only from decoded color frames.
+- Optical-flow or lightweight frame interpolation from decoded color frames only.
 - Larger shader ML upscalers as WebGPU compute performance and browser tooling mature.
 - Optional native helper for a true MetalFX bridge, if it can be done transparently and with a reviewable security model.

@@ -136,6 +136,8 @@ describe('resolveSiteSettings', () => {
             mode: 'smooth',
             scale: 1.7,
             fsrSharpness: 2,
+            frameGenerationEnabled: true,
+            frameGenerationTargetFps: 120,
           },
         },
       ],
@@ -146,7 +148,13 @@ describe('resolveSiteSettings', () => {
     expect(normalized.rules[0]).toMatchObject({
       id: 'yt',
       pattern: 'm.youtube.com',
-      settings: { mode: 'smooth', scale: 1.7, fsrSharpness: 1 },
+      settings: {
+        mode: 'smooth',
+        scale: 1.7,
+        fsrSharpness: 1,
+        frameGenerationEnabled: true,
+        frameGenerationTargetFps: 120,
+      },
     });
   });
 });

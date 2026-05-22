@@ -18,6 +18,10 @@ export const SCALE_FACTORS = [1.3, 1.5, 1.7, 2.0] as const;
 
 export type ScaleFactor = (typeof SCALE_FACTORS)[number];
 
+export const FRAME_GENERATION_TARGETS = [60, 120] as const;
+
+export type FrameGenerationTargetFps = (typeof FRAME_GENERATION_TARGETS)[number];
+
 export interface UpscalerSettings {
   enabled: boolean;
   mode: UpscalerMode;
@@ -25,6 +29,8 @@ export interface UpscalerSettings {
   fsrSharpness: number;
   animeSubMode: 'mode-a' | 'mode-aa';
   ravuVariant: 'auto' | 'zoom' | 'lite';
+  frameGenerationEnabled: boolean;
+  frameGenerationTargetFps: FrameGenerationTargetFps;
   forceWebGL2: boolean;
   forceF32: boolean;
   workgroupSize: '8x8' | '16x16';
@@ -37,6 +43,8 @@ export const DEFAULT_SETTINGS: UpscalerSettings = {
   fsrSharpness: 0.2,
   animeSubMode: 'mode-aa',
   ravuVariant: 'auto',
+  frameGenerationEnabled: false,
+  frameGenerationTargetFps: 60,
   forceWebGL2: false,
   forceF32: false,
   workgroupSize: '8x8',

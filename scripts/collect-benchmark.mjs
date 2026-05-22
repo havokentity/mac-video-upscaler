@@ -37,6 +37,8 @@ const defaultSettings = {
   fsrSharpness: 0.2,
   animeSubMode: 'mode-aa',
   ravuVariant: 'auto',
+  frameGenerationEnabled: false,
+  frameGenerationTargetFps: 60,
   forceWebGL2: false,
   forceF32: false,
   workgroupSize: '8x8',

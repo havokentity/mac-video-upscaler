@@ -20,6 +20,18 @@
           Default scale
           <select id="defaultScale"></select>
         </label>
+        <fieldset id="frameGenerationField">
+          <legend>Frame Generation</legend>
+          <label class="checkbox">
+            <input id="frameGenerationEnabled" type="checkbox" />
+            Target higher output FPS
+          </label>
+          <label id="frameGenerationTargetField">
+            Target
+            <select id="frameGenerationTarget"></select>
+          </label>
+          <p class="note">Experimental frame pacing. True optical-flow frame generation is still on the roadmap.</p>
+        </fieldset>
         <label id="sharpnessField">
           <span id="sharpnessLabel">Sharpness</span>
           <input id="fsrSharpness" type="range" min="0" max="1" step="0.05" />

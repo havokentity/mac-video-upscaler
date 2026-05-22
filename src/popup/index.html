@@ -27,6 +27,19 @@
         <select id="scale"></select>
       </label>
 
+      <fieldset id="frameGenerationField">
+        <legend>Frame Generation</legend>
+        <label class="checkbox">
+          <input id="frameGenerationEnabled" type="checkbox" />
+          Target higher output FPS
+        </label>
+        <label id="frameGenerationTargetField">
+          Target
+          <select id="frameGenerationTarget"></select>
+        </label>
+        <p class="note">Experimental frame pacing. It repeats/interpolates presentation timing only; optical-flow motion generation is planned later.</p>
+      </fieldset>
+
       <label id="sharpnessField">
         <span id="sharpnessLabel">Sharpness</span>
         <input id="fsrSharpness" type="range" min="0" max="1" step="0.05" />

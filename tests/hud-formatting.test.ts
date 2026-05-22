@@ -45,6 +45,7 @@ describe('HUD formatting', () => {
       canvasHeight: 2160,
       canvasWidth: 3840,
       mode: 'crisp',
+      frameGeneration: 'target 60 fps',
       precision: 'f16',
       reason: 'FSR 1.0-style WebGPU f16 compute upscale active.',
       sourceHeight: 1080,
@@ -56,7 +57,7 @@ describe('HUD formatting', () => {
     expect(rows).toContainEqual({ label: 'Mode', value: 'webgpu crisp' });
     expect(rows).toContainEqual({ label: 'Resolution', value: '1920x1080 -> 3840x2160' });
     expect(rows).toContainEqual({ label: 'Rendered', value: '60.0 fps' });
-    expect(rows).toContainEqual({ label: 'Details', value: 'Apple M3 / f16' });
+    expect(rows).toContainEqual({ label: 'Details', value: 'Apple M3 / f16 / target 60 fps' });
     expect(rows.at(-1)).toEqual({
       label: 'Status',
       value: 'FSR 1.0-style WebGPU f16 compute upscale active.',

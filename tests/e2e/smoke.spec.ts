@@ -311,6 +311,43 @@ test('enabled setting rebuilds the active overlay without a page refresh', async
   }
 });
 
+test('frame generation setting shows its target in the HUD', async ({
+  browserName,
+}, testInfo) => {
+  test.skip(browserName !== 'chromium', 'Chrome extensions can only be loaded in Chromium.');
+
+  expect(
+    existsSync(path.join(extensionPath, 'manifest.json')),
+    'Run `pnpm build` before `pnpm test:e2e`; this test loads the unpacked extension from dist.',
+  ).toBe(true);
+
+  const server = await startStaticServer(fixturesPath);
+  let context: BrowserContext | undefined;
+
+  try {
+    context = await createExtensionContext(testInfo.workerIndex + 190);
+    await writeExtensionSettings(context, {
+      ...DEFAULT_SETTINGS,
+      forceWebGL2: true,
+      frameGenerationEnabled: true,
+      frameGenerationTargetFps: 60,
+      mode: 'crisp',
+    });
+
+    const page = context.pages()[0] ?? (await context.newPage());
+    await page.goto(server.origin, { waitUntil: 'domcontentloaded' });
+
+    await expect(page.locator('.mac-video-upscaler-overlay')).toHaveCount(1, { timeout: 10_000 });
+    await page.keyboard.press('Control+Shift+U');
+    await expect(page.locator('.mac-video-upscaler-hud')).toContainText('target 60 fps', {
+      timeout: 10_000,
+    });
+  } finally {
+    await closeContext(context);
+    await server.close();
+  }
+});
+
 test('site block list disables the overlay pipeline without hiding the video', async ({
   browserName,
 }, testInfo) => {

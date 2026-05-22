@@ -1,4 +1,10 @@
-import { SCALE_FACTORS, UPSCALER_MODES, type ScaleFactor, type UpscalerMode } from '../common/modes';
+import {
+  FRAME_GENERATION_TARGETS,
+  SCALE_FACTORS,
+  UPSCALER_MODES,
+  type ScaleFactor,
+  type UpscalerMode,
+} from '../common/modes';
 import { loadSettings, patchSettings } from '../common/storage';
 import { getModeControlState, isImplementedMode, MODE_DESCRIPTIONS, MODE_LABELS } from './ui-model';
 import './style.css';
@@ -16,6 +22,12 @@ const defaultMode = getRequiredElement('#defaultMode') as HTMLSelectElement;
 const modeDescription = getRequiredElement('#modeDescription') as HTMLParagraphElement;
 const scaleField = getRequiredElement('#scaleField') as HTMLLabelElement;
 const defaultScale = getRequiredElement('#defaultScale') as HTMLSelectElement;
+const frameGenerationField = getRequiredElement('#frameGenerationField') as HTMLFieldSetElement;
+const frameGenerationEnabled = getRequiredElement('#frameGenerationEnabled') as HTMLInputElement;
+const frameGenerationTargetField = getRequiredElement(
+  '#frameGenerationTargetField',
+) as HTMLLabelElement;
+const frameGenerationTarget = getRequiredElement('#frameGenerationTarget') as HTMLSelectElement;
 const sharpnessField = getRequiredElement('#sharpnessField') as HTMLLabelElement;
 const sharpnessLabel = getRequiredElement('#sharpnessLabel');
 const fsrSharpness = getRequiredElement('#fsrSharpness') as HTMLInputElement;
@@ -38,10 +50,15 @@ UPSCALER_MODES.forEach((value) => {
 SCALE_FACTORS.forEach((value) => {
   defaultScale.add(new Option(`${value.toFixed(1)}x`, String(value)));
 });
+FRAME_GENERATION_TARGETS.forEach((value) => {
+  frameGenerationTarget.add(new Option(`${String(value)} fps`, String(value)));
+});
 
 const settings = await loadSettings();
 defaultMode.value = settings.mode;
 defaultScale.value = String(settings.scale);
+frameGenerationEnabled.checked = settings.frameGenerationEnabled;
+frameGenerationTarget.value = String(settings.frameGenerationTargetFps);
 fsrSharpness.value = String(settings.fsrSharpness);
 animeSubMode.value = settings.animeSubMode;
 ravuVariant.value = settings.ravuVariant;
@@ -59,6 +76,8 @@ const updateModeControls = (): void => {
   }`;
   modeDescription.textContent = MODE_DESCRIPTIONS[selectedMode];
   scaleField.hidden = !controlState.scaleVisible;
+  frameGenerationField.hidden = !controlState.frameGenerationVisible;
+  frameGenerationTargetField.hidden = !frameGenerationEnabled.checked;
   sharpnessField.hidden = !controlState.sharpnessVisible;
   sharpnessLabel.textContent = controlState.sharpnessLabel;
   sharpnessValue.value = sharpness.toFixed(2);
@@ -80,6 +99,16 @@ defaultMode.addEventListener('change', () => {
 defaultScale.addEventListener('change', () => {
   void patchSettings({ scale: Number(defaultScale.value) as ScaleFactor });
   updateModeControls();
+});
+
+frameGenerationEnabled.addEventListener('change', () => {
+  void patchSettings({ frameGenerationEnabled: frameGenerationEnabled.checked });
+  updateModeControls();
+});
+
+frameGenerationTarget.addEventListener('change', () => {
+  const next = Number(frameGenerationTarget.value) === 120 ? 120 : 60;
+  void patchSettings({ frameGenerationTargetFps: next });
 });
 
 fsrSharpness.addEventListener('input', () => {

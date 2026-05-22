@@ -26,12 +26,14 @@ describe('options UI model', () => {
 
   it('shows mode-specific controls for implemented modes', () => {
     expect(getModeControlState('none')).toMatchObject({
+      frameGenerationVisible: false,
       implemented: true,
       scaleVisible: false,
       sharpnessVisible: false,
       supportNote: 'Native video passthrough; no overlay rendering is applied.',
     });
     expect(getModeControlState('crisp')).toMatchObject({
+      frameGenerationVisible: true,
       scaleVisible: true,
       sharpnessLabel: 'FSR sharpness',
       sharpnessVisible: true,
