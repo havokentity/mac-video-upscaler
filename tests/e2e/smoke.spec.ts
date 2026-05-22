@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { DEFAULT_SETTINGS, type UpscalerSettings } from '../../src/common/modes';
+import type { UpscalerMode } from '../../src/common/modes';
 
 interface StaticServer {
   readonly origin: string;
@@ -246,3 +247,50 @@ test('Crisp mode uses the WebGL2 1.5x upscaler on a local MP4 video', async ({
     await server.close();
   }
 });
+
+const routedModeCases: Array<{
+  readonly mode: UpscalerMode;
+  readonly expectedHudText: string;
+  readonly settings?: Partial<UpscalerSettings>;
+}> = [
+  { mode: 'sharpen', expectedHudText: 'sharpen' },
+  { mode: 'anime', expectedHudText: 'anime', settings: { animeSubMode: 'mode-a' } },
+  { mode: 'smooth', expectedHudText: 'smooth' },
+  { mode: 'neural-lite', expectedHudText: 'neural-lite' },
+  { mode: 'neural-pro', expectedHudText: 'neural-pro' },
+];
+
+for (const { mode, expectedHudText, settings } of routedModeCases) {
+  test(`${mode} mode reaches its routed pipeline status`, async ({ browserName }, testInfo) => {
+    test.skip(browserName !== 'chromium', 'Chrome extensions can only be loaded in Chromium.');
+
+    expect(
+      existsSync(path.join(extensionPath, 'manifest.json')),
+      'Run `pnpm build` before `pnpm test:e2e`; this test loads the unpacked extension from dist.',
+    ).toBe(true);
+
+    const server = await startStaticServer(fixturesPath);
+    let context: BrowserContext | undefined;
+
+    try {
+      context = await createExtensionContext(testInfo.workerIndex + 200 + routedModeCases.findIndex((item) => item.mode === mode));
+      await writeExtensionSettings(context, {
+        ...DEFAULT_SETTINGS,
+        ...settings,
+        mode,
+      });
+
+      const page = context.pages()[0] ?? (await context.newPage());
+      await page.goto(server.origin, { waitUntil: 'domcontentloaded' });
+
+      await expect(page.locator('.mac-video-upscaler-overlay')).toHaveCount(1, { timeout: 10_000 });
+      await page.keyboard.press('Control+Shift+U');
+      await expect(page.locator('.mac-video-upscaler-hud')).toContainText(expectedHudText, {
+        timeout: 10_000,
+      });
+    } finally {
+      await closeContext(context);
+      await server.close();
+    }
+  });
+}
