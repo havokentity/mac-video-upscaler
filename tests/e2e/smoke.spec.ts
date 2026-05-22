@@ -100,31 +100,49 @@ const writeExtensionSettings = async (
 
   await worker.evaluate((nextSettings) => {
     return new Promise<void>((resolve, reject) => {
-      chrome.storage.sync.set({ settings: nextSettings }, () => {
+      chrome.storage.sync.clear(() => {
         if (chrome.runtime.lastError) {
           reject(new Error(chrome.runtime.lastError.message));
           return;
         }
 
-        resolve();
+        chrome.storage.sync.set({ settings: nextSettings }, () => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
+
+          resolve();
+        });
       });
     });
   }, settings);
 
-  const storedSettings = await worker.evaluate(() => {
-    return new Promise<UpscalerSettings>((resolve, reject) => {
-      chrome.storage.sync.get('settings', (result) => {
-        if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message));
-          return;
-        }
+  await expect
+    .poll(
+      () =>
+        worker.evaluate((nextSettings) => {
+          return new Promise<string | undefined>((resolve, reject) => {
+            chrome.storage.sync.set({ settings: nextSettings }, () => {
+              if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+                return;
+              }
 
-        resolve(result.settings as UpscalerSettings);
-      });
-    });
-  });
+              chrome.storage.sync.get('settings', (result) => {
+                if (chrome.runtime.lastError) {
+                  reject(new Error(chrome.runtime.lastError.message));
+                  return;
+                }
 
-  expect(storedSettings.mode).toBe(settings.mode);
+                resolve((result.settings as Partial<UpscalerSettings> | undefined)?.mode);
+              });
+            });
+          });
+        }, settings),
+      { timeout: 10_000 },
+    )
+    .toBe(settings.mode);
 };
 
 test('built extension mounts an overlay canvas on a local MP4 video', async ({ browserName }, testInfo) => {
