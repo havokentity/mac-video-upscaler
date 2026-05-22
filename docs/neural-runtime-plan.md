@@ -21,7 +21,7 @@ The implementation keeps WASM fallback available because Chrome/headless environ
 Relevant upstream notes:
 
 - ONNX Runtime documents the WebGPU entry point as `onnxruntime-web/webgpu` and requires `executionProviders: ['webgpu']`: [Using the WebGPU Execution Provider](https://onnxruntime.ai/docs/tutorials/web/ep-webgpu.html).
-- ONNX Runtime's deploy guide says the WebGPU/WebNN path uses the JSEP-enabled WASM artifact, currently documented as `ort-wasm-simd-threaded.jsep.wasm`: [Deploying ONNX Runtime Web](https://onnxruntime.ai/docs/tutorials/web/deploy.html).
+- ONNX Runtime's WebGPU bundle currently initializes through the asyncify sidecar in the installed `onnxruntime-web` package, so the extension pins that exact same-version `.mjs` and `.wasm` pair: [Deploying ONNX Runtime Web](https://onnxruntime.ai/docs/tutorials/web/deploy.html).
 
 ## MV3 Bundling Shape
 
@@ -32,8 +32,8 @@ dist/
   assets/
     ort.webgpu.min-*.js
   ort/
-    ort-wasm-simd-threaded.jsep.mjs
-    ort-wasm-simd-threaded.jsep.wasm
+    ort-wasm-simd-threaded.asyncify.mjs
+    ort-wasm-simd-threaded.asyncify.wasm
   models/
     artcnn/
       ArtCNN_C4F16.onnx
@@ -42,7 +42,7 @@ dist/
 Runtime setup:
 
 1. Bundle ORT JavaScript through Vite/CRXJS from a normal npm dependency. Do not load ORT JavaScript from a CDN.
-2. Copy the exact ORT JSEP `.mjs` and `.wasm` sidecars from the installed package into extension-owned public assets.
+2. Copy the exact ORT asyncify `.mjs` and `.wasm` sidecars from the installed package into extension-owned public assets.
 3. Set `ort.env.wasm.wasmPaths` before the first session is created, resolved through `chrome.runtime.getURL('ort/...')`.
 4. Load the ArtCNN C4F16 model with `chrome.runtime.getURL('models/artcnn/ArtCNN_C4F16.onnx')`.
 5. Keep larger model selection, model compression, and zero-copy video tensor plumbing behind separate decisions.
@@ -89,7 +89,7 @@ For real candidates, prefer ONNX files that:
 
 ## Open Questions
 
-- Does the selected `onnxruntime-web` version require additional `.mjs` or worker sidecars for the JSEP/WebGPU build in a Vite MV3 bundle?
+- Does a future `onnxruntime-web` version switch the WebGPU entry point back to a JSEP sidecar or another sidecar name?
 - Can the runtime run reliably from the current content script context on both `https://` pages and local/http test fixtures, or should inference move into an extension page or offscreen document later?
 - What is the acceptable extension package size increase before models need optional download/caching instead of bundling?
 - How much tensor upload/download overhead remains if video frames must round-trip through CPU buffers rather than staying in WebGPU buffers?

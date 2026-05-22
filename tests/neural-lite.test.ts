@@ -5,8 +5,8 @@ import { describe, expect, it } from 'vitest';
 import {
   ARTCNN_C4F16_MODEL_PATH,
   ARTCNN_UPSTREAM,
-  ORT_JSEP_MJS_PATH,
-  ORT_JSEP_WASM_PATH,
+  ORT_ASYNCIFY_MJS_PATH,
+  ORT_ASYNCIFY_WASM_PATH,
   computeNeuralLiteOutputSize,
   createWebGpuNeuralLitePipeline,
   getArtCnnModelUrl,
@@ -75,16 +75,16 @@ describe('Neural-Lite ArtCNN', () => {
 
   it('resolves packaged ArtCNN ONNX and ORT assets', () => {
     expect(ARTCNN_C4F16_MODEL_PATH).toBe('models/artcnn/ArtCNN_C4F16.onnx');
-    expect(ORT_JSEP_MJS_PATH).toBe('ort/ort-wasm-simd-threaded.jsep.mjs');
-    expect(ORT_JSEP_WASM_PATH).toBe('ort/ort-wasm-simd-threaded.jsep.wasm');
+    expect(ORT_ASYNCIFY_MJS_PATH).toBe('ort/ort-wasm-simd-threaded.asyncify.mjs');
+    expect(ORT_ASYNCIFY_WASM_PATH).toBe('ort/ort-wasm-simd-threaded.asyncify.wasm');
     expect(getArtCnnModelUrl()).toBe('/models/artcnn/ArtCNN_C4F16.onnx');
     expect(getOrtWasmPaths()).toEqual({
-      mjs: '/ort/ort-wasm-simd-threaded.jsep.mjs',
-      wasm: '/ort/ort-wasm-simd-threaded.jsep.wasm',
+      mjs: '/ort/ort-wasm-simd-threaded.asyncify.mjs',
+      wasm: '/ort/ort-wasm-simd-threaded.asyncify.wasm',
     });
     expect(existsSync(join(process.cwd(), 'public', ARTCNN_C4F16_MODEL_PATH))).toBe(true);
-    expect(existsSync(join(process.cwd(), 'public', ORT_JSEP_MJS_PATH))).toBe(true);
-    expect(existsSync(join(process.cwd(), 'public', ORT_JSEP_WASM_PATH))).toBe(true);
+    expect(existsSync(join(process.cwd(), 'public', ORT_ASYNCIFY_MJS_PATH))).toBe(true);
+    expect(existsSync(join(process.cwd(), 'public', ORT_ASYNCIFY_WASM_PATH))).toBe(true);
   });
 
   it('keeps the shader-native WebGPU ArtCNN port placeholder disabled until weights land', async () => {

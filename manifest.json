@@ -41,8 +41,8 @@
     {
       "resources": [
         "models/artcnn/ArtCNN_C4F16.onnx",
-        "ort/ort-wasm-simd-threaded.jsep.mjs",
-        "ort/ort-wasm-simd-threaded.jsep.wasm"
+        "ort/ort-wasm-simd-threaded.asyncify.mjs",
+        "ort/ort-wasm-simd-threaded.asyncify.wasm"
       ],
       "matches": ["<all_urls>"]
     }

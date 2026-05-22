@@ -14,8 +14,8 @@ export {
 
 export {
   ARTCNN_C4F16_MODEL_PATH,
-  ORT_JSEP_MJS_PATH,
-  ORT_JSEP_WASM_PATH,
+  ORT_ASYNCIFY_MJS_PATH,
+  ORT_ASYNCIFY_WASM_PATH,
   getArtCnnModelUrl,
   getExtensionAssetUrl,
   getOrtWasmPaths,
