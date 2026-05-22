@@ -394,10 +394,11 @@ test('enabled setting rebuilds the active overlay without a page refresh', async
       mode: 'crisp',
     });
 
-    await expect(page.locator('.mac-video-upscaler-hud')).toContainText('disabled', {
+    const rebuiltHud = page.locator('.mac-video-upscaler-hud').last();
+    await expect(rebuiltHud).toContainText('disabled', {
       timeout: 10_000,
     });
-    await expect(page.locator('.mac-video-upscaler-hud')).toContainText('Extension disabled');
+    await expect(rebuiltHud).toContainText('Extension disabled');
     await expect(page.locator('#sample-video')).toHaveCSS('opacity', '1', { timeout: 10_000 });
   } finally {
     await closeContext(context);
