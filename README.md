@@ -2,7 +2,7 @@
 
 Metal-tuned GPU video upscaling for Chrome on macOS. The project targets Manifest V3, WebGPU through Dawn/Tint/Metal, and a WebGL2 fallback for the fast modes.
 
-This repository is being built in ordered milestones. The current scaffold is loadable after `pnpm build`; shader implementations and site verification land in later steps.
+This repository is being built in ordered milestones. The current build mounts a video overlay and performs a 1:1 frame copy through WebGPU, with WebGL2 as the fallback copy path. Shader upscalers land in later steps.
 
 ## Install for Development
 
@@ -34,7 +34,15 @@ pnpm dev
 
 ## How It Works
 
-The content script finds visible `<video>` elements, mounts a pointer-transparent canvas over the video box, and hands frames to a reusable upscaler pipeline. WebGPU is preferred on macOS Chrome 121+; WebGL2 is retained as a fallback for Crisp and Sharpen. Compute pipelines use small coherent workgroups, half precision where it is visually safe, and texture/bind-group reuse to avoid per-frame allocation churn.
+The content script finds visible `<video>` elements, mounts a pointer-transparent canvas over the video box, and hands frames to a reusable upscaler pipeline. The original video is kept in the page for audio, controls, captions, fullscreen, and site event handling, then visually hidden while the overlay presents processed frames.
+
+WebGPU is preferred on macOS Chrome 121+; WebGL2 is retained as a fallback for Crisp and Sharpen. The current WebGPU path uploads frames with `copyExternalImageToTexture` and presents them through a tiny WGSL render pass. Compute upscalers will use small coherent workgroups, half precision where it is visually safe, and texture/bind-group reuse to avoid per-frame allocation churn.
+
+## Verification Status
+
+- Generic HTML5 MP4 fixture: automated Playwright smoke test loads the unpacked extension from `dist`, mounts the overlay, and verifies nonzero canvas dimensions.
+- YouTube: automated Chromium smoke verified the overlay on `https://www.youtube.com/watch?v=jNQXAC9IVRw`.
+- Chrome stable: manual `chrome://extensions` loading is the intended verification path. Playwright-launched Chrome stable profiles did not load the unpacked extension in this environment, while Playwright Chromium did.
 
 MetalFX is native-only and is not reachable from WebGPU, so this extension ships shader upscalers instead of attempting to bridge private platform APIs.
 

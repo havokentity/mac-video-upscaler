@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Mac Video Upscaler fixture</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #10141b;
+      }
+
+      video {
+        width: 320px;
+        height: 180px;
+        background: #000;
+      }
+    </style>
+  </head>
+  <body>
+    <video
+      id="sample-video"
+      src="/sample-video.mp4"
+      width="320"
+      height="180"
+      muted
+      playsinline
+      autoplay
+      loop
+      controls
+    ></video>
+  </body>
+</html>

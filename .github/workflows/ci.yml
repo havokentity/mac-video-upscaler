@@ -35,6 +35,13 @@ jobs:
       - name: Test
         run: pnpm test
 
+      - name: Install Dawn Tint
+        run: |
+          mkdir -p "$RUNNER_TEMP/dawn"
+          curl -L https://github.com/google/dawn/releases/download/v20260423.175430/Dawn-31e25af254ab572c77054edec4946d2244e184dd-macos-latest-Release.tar.gz -o "$RUNNER_TEMP/dawn/dawn.tar.gz"
+          tar -xzf "$RUNNER_TEMP/dawn/dawn.tar.gz" -C "$RUNNER_TEMP/dawn"
+          echo "$RUNNER_TEMP/dawn/Dawn-31e25af254ab572c77054edec4946d2244e184dd-macos-latest-Release/bin" >> "$GITHUB_PATH"
+
       - name: Install Playwright Chromium
         run: pnpm exec playwright install chromium
 

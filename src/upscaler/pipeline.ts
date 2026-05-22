@@ -1,4 +1,6 @@
 import type { UpscalerSettings } from '../common/modes';
+import { createWebGL2CopyPipeline } from './webgl2';
+import { WebGpuVideoCopyPipeline } from './webgpu';
 
 export type UpscalerBackend = 'webgpu' | 'webgl2' | 'disabled';
 
@@ -39,19 +41,39 @@ export const createPipeline = async (
   video: HTMLVideoElement,
   settings: UpscalerSettings,
 ): Promise<FramePipeline> => {
-  await Promise.resolve();
-
-  const webgpuAvailable = 'gpu' in navigator && !settings.forceWebGL2;
-  const webgl2Available = Boolean(canvas.getContext('webgl2'));
-
-  if (webgpuAvailable) {
-    return new DisabledPipeline('WebGPU pipeline is scaffolded; rendering lands in step 2.');
+  if (!settings.enabled) {
+    return new DisabledPipeline('Extension disabled.');
   }
 
-  if (webgl2Available && ['auto', 'crisp', 'sharpen'].includes(settings.mode)) {
-    return new DisabledPipeline('WebGL2 fallback is scaffolded; rendering lands in step 2.');
+  let webgpuFailure: string | undefined;
+
+  if ('gpu' in navigator && navigator.gpu && !settings.forceWebGL2) {
+    try {
+      const pipeline = await WebGpuVideoCopyPipeline.create({
+        canvas,
+        video,
+        presentationFormat: navigator.gpu.getPreferredCanvasFormat(),
+      });
+      pipeline.status.reason = '1:1 copy active.';
+      return pipeline;
+    } catch (error) {
+      webgpuFailure = error instanceof Error ? error.message : 'Unknown WebGPU initialization error.';
+    }
   }
 
-  const dimensions = `${String(video.videoWidth || 0)}x${String(video.videoHeight || 0)}`;
-  return new DisabledPipeline(`No supported backend for ${settings.mode} at ${dimensions}.`);
+  try {
+    const pipeline = createWebGL2CopyPipeline(canvas, video);
+    pipeline.status.reason = webgpuFailure
+      ? `1:1 copy fallback active; WebGPU unavailable: ${webgpuFailure}`
+      : '1:1 copy fallback active.';
+    return pipeline;
+  } catch (error) {
+    const webglFailure =
+      error instanceof Error ? error.message : 'Unknown WebGL2 initialization error.';
+    const reason = webgpuFailure
+      ? `WebGPU failed: ${webgpuFailure}; WebGL2 failed: ${webglFailure}`
+      : webglFailure;
+
+    return new DisabledPipeline(reason);
+  }
 };

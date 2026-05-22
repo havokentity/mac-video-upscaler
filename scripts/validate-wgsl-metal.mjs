@@ -1,9 +1,10 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 
-const root = new URL('..', import.meta.url).pathname;
+const root = fileURLToPath(new URL('..', import.meta.url));
 const sourceRoot = join(root, 'src');
 
 const collectWgsl = async (directory) => {
@@ -33,19 +34,14 @@ if (wgslFiles.length === 0) {
   process.exit(0);
 }
 
-let tintAvailable = true;
-
-try {
-  execFileSync('tint', ['--version'], { stdio: 'ignore' });
-} catch {
-  tintAvailable = false;
-}
-
-if (!tintAvailable) {
+const tintProbe = spawnSync('tint', ['--help'], { stdio: 'ignore' });
+if (tintProbe.error?.code === 'ENOENT') {
   console.error('Tint CLI is required once WGSL shaders are present.');
   process.exit(1);
 }
 
 for (const file of wgslFiles) {
-  execFileSync('tint', ['--format=msl', file], { stdio: 'inherit' });
+  execFileSync('tint', ['--format=msl', '--output-name=-', file], { stdio: 'ignore' });
 }
+
+console.log(`Tint validated ${wgslFiles.length} WGSL shader(s) to MSL.`);
