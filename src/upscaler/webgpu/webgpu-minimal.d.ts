@@ -8,8 +8,11 @@ interface GPUAdapterInfo {
 }
 
 interface GPUAdapter {
+  readonly features: {
+    has(feature: string): boolean;
+  };
   readonly info: GPUAdapterInfo;
-  requestDevice(): Promise<GPUDevice>;
+  requestDevice(descriptor?: object): Promise<GPUDevice>;
 }
 
 interface GPU {
@@ -24,10 +27,12 @@ interface GPUDeviceLostInfo {
 interface GPUDevice {
   readonly lost: Promise<GPUDeviceLostInfo>;
   readonly queue: GPUQueue;
+  createBuffer(descriptor: object): GPUBuffer;
   createSampler(descriptor?: object): GPUSampler;
   createBindGroupLayout(descriptor: object): GPUBindGroupLayout;
   createShaderModule(descriptor: object): GPUShaderModule;
   createPipelineLayout(descriptor: object): GPUPipelineLayout;
+  createComputePipeline(descriptor: object): GPUComputePipeline;
   createRenderPipeline(descriptor: object): GPURenderPipeline;
   createCommandEncoder(descriptor?: object): GPUCommandEncoder;
   createTexture(descriptor: object): GPUTexture;
@@ -38,6 +43,7 @@ interface GPUDevice {
 interface GPUQueue {
   copyExternalImageToTexture(source: object, destination: object, copySize: object): void;
   submit(commandBuffers: GPUCommandBuffer[]): void;
+  writeBuffer(buffer: GPUBuffer, bufferOffset: number, data: BufferSource): void;
 }
 
 interface GPUCanvasContext {
@@ -47,9 +53,11 @@ interface GPUCanvasContext {
 }
 
 type GPUSampler = object;
+type GPUBuffer = object;
 type GPUBindGroupLayout = object;
 type GPUShaderModule = object;
 type GPUPipelineLayout = object;
+type GPUComputePipeline = object;
 type GPURenderPipeline = object;
 type GPUTextureView = object;
 type GPUBindGroup = object;
@@ -61,8 +69,16 @@ interface GPUTexture {
 }
 
 interface GPUCommandEncoder {
+  beginComputePass(descriptor?: object): GPUComputePassEncoder;
   beginRenderPass(descriptor: object): GPURenderPassEncoder;
   finish(): GPUCommandBuffer;
+}
+
+interface GPUComputePassEncoder {
+  setPipeline(pipeline: GPUComputePipeline): void;
+  setBindGroup(index: number, bindGroup: GPUBindGroup): void;
+  dispatchWorkgroups(workgroupCountX: number, workgroupCountY?: number, workgroupCountZ?: number): void;
+  end(): void;
 }
 
 interface GPURenderPassEncoder {
@@ -73,12 +89,19 @@ interface GPURenderPassEncoder {
 }
 
 declare const GPUShaderStage: {
+  readonly COMPUTE: number;
   readonly FRAGMENT: number;
 };
 
 declare const GPUTextureUsage: {
   readonly COPY_DST: number;
+  readonly STORAGE_BINDING: number;
   readonly TEXTURE_BINDING: number;
+};
+
+declare const GPUBufferUsage: {
+  readonly COPY_DST: number;
+  readonly UNIFORM: number;
 };
 
 interface Navigator {

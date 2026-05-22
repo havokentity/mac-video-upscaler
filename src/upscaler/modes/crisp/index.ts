@@ -9,3 +9,10 @@ export {
   type CrispOutputSize,
   type WebGL2CrispPipelineOptions,
 } from './webgl2-crisp-pipeline';
+
+export {
+  WebGpuCrispPipeline,
+  WebGpuCrispPipelineError,
+  type WebGpuCrispPipelineOptions,
+  type WebGpuCrispPipelineStatus,
+} from './webgpu-crisp-pipeline';
