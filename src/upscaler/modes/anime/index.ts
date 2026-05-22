@@ -1,4 +1,12 @@
 export {
+  WebGL2AnimePipeline,
+  WebGL2AnimePipelineError,
+  createWebGL2AnimePipeline,
+  type WebGL2AnimePipelineOptions,
+  type WebGL2AnimePipelineStatus,
+} from './webgl2-anime-pipeline';
+
+export {
   WebGpuAnimePipeline,
   WebGpuAnimePipelineError,
   computeAnimeOutputSize,

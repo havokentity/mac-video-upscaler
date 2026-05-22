@@ -22,7 +22,7 @@ export const MODE_DESCRIPTIONS: Record<UpscalerMode, string> = {
   auto: 'Automatically chooses among the implemented lightweight modes.',
   crisp: 'Fast FSR-style upscaling for general video.',
   sharpen: 'CAS-style native-resolution sharpening.',
-  anime: 'Anime4K-inspired WebGPU shader chain for animation and illustration.',
+  anime: 'Anime4K-inspired line restoration for animation and illustration.',
   smooth: 'WebGPU Lanczos/Jinc-style scaling for smoother live action.',
   edge: 'Experimental WebGL2 edge filter for outlines and artifact inspection.',
   'night-vision': 'Experimental green phosphor WebGL2 filter.',
@@ -90,7 +90,7 @@ export const getModeControlState = (mode: UpscalerMode): ModeControlState => {
         : isSharpen
         ? 'Sharpen renders at 1.0x and ignores scale.'
         : isAnime
-          ? 'Anime is WebGPU-only and uses the Anime4K sub-mode control.'
+          ? 'Anime uses WebGL2 first and keeps the Anime4K sub-mode control.'
         : isSmooth
           ? 'Smooth is WebGPU-only.'
           : isFunFilter

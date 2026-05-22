@@ -28,7 +28,7 @@ pnpm dev
 | Auto | WebGPU/WebGL2 | MIT | Cheap first-frame classifier; Neural-Pro remains opt-in. |
 | Crisp | WebGL2 + WebGPU | MIT | FSR 1.0-inspired EASU 12-tap reconstruction plus stronger RCAS/detail sharpening, with extra boost for tiny sources such as 144p. Crisp currently prefers the visually verified WebGL2 path and falls back to WebGPU if needed. The canvas renders at least to the video display backing size so Chrome does not blur the result with a second upscale. |
 | Sharpen | WebGL2 + WebGPU | MIT | Stronger CAS-style 1.0x sharpen with WebGL2 preferred, WebGPU fallback, and output sized to the display backing so stretched low-res video is processed after the browser layout scale. |
-| Anime | WebGPU | MIT | More assertive Anime4K-inspired Mode A and A+A milestone path with line emphasis and posterized restoration; exact upstream chain remains planned. |
+| Anime | WebGL2 + WebGPU | MIT | Anime4K-inspired Mode A and A+A path with WebGL2 preferred for visible line restoration today, plus the WebGPU chain retained for the Metal-tuned path. Exact upstream chain remains planned. |
 | Smooth | WebGPU | Public-domain math | Lanczos/Jinc-style WebGPU upscaler; fuller EWA pass remains planned. |
 | Edge Detect | WebGL2 | MIT | Experimental outline filter for inspecting edges and compression artifacts. |
 | Night Vision | WebGL2 | MIT | Experimental green phosphor filter with scanline/noise styling. |
@@ -43,7 +43,7 @@ pnpm dev
 
 The content script finds visible `<video>` elements, mounts a pointer-transparent canvas over the video box, resolves global settings plus allow/block/site overrides for the current hostname, and hands frames to a reusable upscaler pipeline. The original video is kept in the page for audio, controls, captions, fullscreen, and site event handling, then visually hidden while the overlay presents processed frames. Blocked or allow-list-missed sites keep the original video visible and show the disable reason in the HUD.
 
-Crisp and Sharpen currently prefer the WebGL2 paths because those are the visually verified live-video implementations; WebGPU remains available as a fallback for those modes and is required for Anime and Smooth. The current WebGPU paths upload frames with `copyExternalImageToTexture`, reuse GPU resources, validate WGSL through Tint to MSL, and use `8x8x1` compute workgroups where compute is active.
+Crisp, Sharpen, and Anime currently prefer the WebGL2 paths because those are the visually verified live-video implementations; WebGPU remains available as a fallback for those modes and is required for Smooth. The current WebGPU paths upload frames with `copyExternalImageToTexture`, reuse GPU resources, validate WGSL through Tint to MSL, and use `8x8x1` compute workgroups where compute is active.
 
 Experimental frame generation is a presentation pacing option: it asks the overlay to render at a 60 fps or 120 fps target instead of waiting only for decoded video frame callbacks. This is useful for responsiveness testing and display pacing, but it is not optical-flow motion interpolation yet.
 

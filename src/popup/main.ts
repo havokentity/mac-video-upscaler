@@ -30,7 +30,7 @@ const MODE_NOTES: Record<UpscalerMode, string> = {
   auto: 'Picks Crisp, Smooth, or Sharpen-friendly defaults from the video. Neural-Pro is never auto-selected.',
   crisp: 'Fast FSR-style upscaling for live action and general video.',
   sharpen: 'CAS-style edge enhancement at native size.',
-  anime: 'Anime4K-inspired WebGPU shader chain for animation and illustration.',
+  anime: 'Anime4K-inspired line restoration for animation and illustration.',
   smooth: 'Cleaner Lanczos/Jinc-style spatial scaling for softer live action.',
   edge: 'Experimental cyan edge overlay for inspecting outlines and compression artifacts.',
   'night-vision': 'Experimental green phosphor look with scanline/noise texture.',
@@ -150,7 +150,7 @@ const updateModeControls = (): void => {
         : isCrispLike
           ? 'Crisp uses the visually verified WebGL2 path first, with WebGPU fallback.'
         : isAnime
-          ? 'Anime requires WebGPU and uses the selected Anime4K sub-mode.'
+          ? 'Anime uses the visually verified WebGL2 path first, with WebGPU fallback.'
           : isFunFilter
             ? 'Experimental filter rendered with WebGL2.'
             : 'Smooth requires WebGPU.'

@@ -182,6 +182,26 @@ const sampleOverlay = async (page: Page): Promise<number[]> =>
     return sample;
   });
 
+const sampleVideo = async (page: Page): Promise<number[]> =>
+  page.locator('#sample-video').evaluate((element) => {
+    const video = element as HTMLVideoElement;
+    const sampler = document.createElement('canvas');
+    sampler.width = 24;
+    sampler.height = 24;
+    const context2d = sampler.getContext('2d', { willReadFrequently: true });
+    if (!context2d) {
+      throw new Error('2D sampler unavailable.');
+    }
+
+    context2d.drawImage(video, 0, 0, sampler.width, sampler.height);
+    const data = context2d.getImageData(0, 0, sampler.width, sampler.height).data;
+    const sample: number[] = [];
+    for (let index = 0; index < data.length; index += 4) {
+      sample.push(data[index], data[index + 1], data[index + 2]);
+    }
+    return sample;
+  });
+
 const sampleDelta = (left: readonly number[], right: readonly number[]): number => {
   let delta = 0;
   for (let index = 0; index < Math.min(left.length, right.length); index += 1) {
@@ -433,6 +453,47 @@ test('Sharpen changes the rendered WebGL2 output on a paused frame', async ({
     await expect
       .poll(async () => sampleDelta(await sampleOverlay(page), softSample), { timeout: 10_000 })
       .toBeGreaterThan(0.15);
+  } finally {
+    await closeContext(context);
+    await server.close();
+  }
+});
+
+test('Anime changes the rendered WebGL2 output on a paused frame', async ({
+  browserName,
+}, testInfo) => {
+  test.skip(browserName !== 'chromium', 'Chrome extensions can only be loaded in Chromium.');
+
+  expect(
+    existsSync(path.join(extensionPath, 'manifest.json')),
+    'Run `pnpm build` before `pnpm test:e2e`; this test loads the unpacked extension from dist.',
+  ).toBe(true);
+
+  const server = await startStaticServer(fixturesPath);
+  let context: BrowserContext | undefined;
+
+  try {
+    context = await createExtensionContext(testInfo.workerIndex + 145);
+    await writeExtensionSettings(context, {
+      ...DEFAULT_SETTINGS,
+      animeSubMode: 'mode-aa',
+      forceWebGL2: true,
+      hudEnabled: true,
+      mode: 'anime',
+      scale: 2,
+    });
+
+    const page = context.pages()[0] ?? (await context.newPage());
+    await page.goto(server.origin, { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('.mac-video-upscaler-overlay')).toHaveCount(1, { timeout: 10_000 });
+    await pauseOnStillFrame(page);
+    await expect(page.locator('#sample-video')).toHaveCSS('opacity', '0', { timeout: 10_000 });
+    await expect(page.locator('.mac-video-upscaler-hud').last()).toContainText('webgl2 anime');
+    const nativeSample = await sampleVideo(page);
+
+    await expect
+      .poll(async () => sampleDelta(await sampleOverlay(page), nativeSample), { timeout: 10_000 })
+      .toBeGreaterThan(0.25);
   } finally {
     await closeContext(context);
     await server.close();

@@ -1,6 +1,6 @@
 import type { UpscalerMode, UpscalerSettings } from '../common/modes';
 import { classifyVideoFrame } from './auto/classifier';
-import { WebGpuAnimePipeline } from './modes/anime';
+import { createWebGL2AnimePipeline, WebGpuAnimePipeline } from './modes/anime';
 import { createWebGL2CrispPipeline, WebGpuCrispPipeline } from './modes/crisp';
 import { createWebGL2FunPipeline, type FunFilterMode } from './modes/fun';
 import { createWebGpuNeuralLitePipeline } from './modes/neural-lite';
@@ -194,11 +194,22 @@ export const createPipeline = async (
   }
 
   if (mode === 'anime') {
+    let webgl2Failure: string | undefined;
+
+    try {
+      const pipeline = createWebGL2AnimePipeline(canvas, video, {
+        scale: settings.scale,
+        subMode: settings.animeSubMode,
+      });
+      pipeline.status.mode = requestedMode === 'auto' ? `auto -> ${mode}` : mode;
+      pipeline.status.reason = `${autoPrefix}${pipeline.status.reason ?? ''}`.trim();
+      return pipeline;
+    } catch (error) {
+      webgl2Failure = getErrorMessage(error, 'Unknown WebGL2 Anime error.');
+    }
+
     if (!('gpu' in navigator) || !navigator.gpu || settings.forceWebGL2) {
-      return new DisabledPipeline(
-        `${autoPrefix}Anime mode requires WebGPU; WebGL2 fallback is not available.`,
-        requestedMode === 'auto' ? `auto -> ${mode}` : mode,
-      );
+      return new DisabledPipeline(`WebGL2 Anime failed: ${webgl2Failure}`, requestedMode === 'auto' ? `auto -> ${mode}` : mode);
     }
 
     try {
@@ -216,7 +227,7 @@ export const createPipeline = async (
     } catch (error) {
       const reason = getErrorMessage(error, 'Unknown WebGPU Anime error.');
       return new DisabledPipeline(
-        `${autoPrefix}${reason}`,
+        `${autoPrefix}WebGL2 Anime failed: ${webgl2Failure}; WebGPU Anime failed: ${reason}`,
         requestedMode === 'auto' ? `auto -> ${mode}` : mode,
       );
     }
