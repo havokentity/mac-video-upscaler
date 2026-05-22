@@ -80,7 +80,7 @@ struct MacVideoUpscalerNative {
       let options = try parseArguments(CommandLine.arguments)
       try await upscaleVideo(options: options)
     } catch {
-      fputs("mac-video-upscaler-native: \(error)\n\n", stderr)
+      fputs("chrome-video-upscaler-native: \(error)\n\n", stderr)
       fputs(Self.usage, stderr)
       exit(1)
     }
@@ -88,7 +88,7 @@ struct MacVideoUpscalerNative {
 
   private static let usage = """
   Usage:
-    swift run mac-video-upscaler-native --input input.mp4 --output output.mp4 [options]
+    swift run chrome-video-upscaler-native --input input.mp4 --output output.mp4 [options]
 
   Options:
     --mode crisp|rescue|smooth|sharpen

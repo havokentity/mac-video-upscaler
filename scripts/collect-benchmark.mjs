@@ -326,7 +326,7 @@ const startStaticServer = async (root) => {
 };
 
 const createExtensionContext = async (options) => {
-  const profileDir = path.join(tmpdir(), `mac-video-upscaler-benchmark-${Date.now().toString()}`);
+  const profileDir = path.join(tmpdir(), `chrome-video-upscaler-benchmark-${Date.now().toString()}`);
   await mkdir(profileDir, { recursive: true });
 
   return chromium.launchPersistentContext(profileDir, {
@@ -374,15 +374,15 @@ const collectModeSample = async (page, origin, mode, durationMs) => {
     const video = document.querySelector('#sample-video');
     return video instanceof HTMLVideoElement && video.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA;
   });
-  await page.locator('.mac-video-upscaler-overlay').waitFor({ state: 'attached', timeout: 10_000 });
+  await page.locator('.chrome-video-upscaler-overlay').waitFor({ state: 'attached', timeout: 10_000 });
   await page.keyboard.press('Control+Shift+U');
-  await page.locator('.mac-video-upscaler-hud').waitFor({ state: 'attached', timeout: 5_000 });
+  await page.locator('.chrome-video-upscaler-hud').waitFor({ state: 'attached', timeout: 5_000 });
 
   return page.evaluate(
     async ({ sampleDurationMs, sampleMode }) => {
       const video = document.querySelector('#sample-video');
-      const overlay = document.querySelector('.mac-video-upscaler-overlay');
-      const hud = document.querySelector('.mac-video-upscaler-hud');
+      const overlay = document.querySelector('.chrome-video-upscaler-overlay');
+      const hud = document.querySelector('.chrome-video-upscaler-hud');
       if (!(video instanceof HTMLVideoElement) || !(overlay instanceof HTMLCanvasElement)) {
         throw new Error('Benchmark fixture did not expose a video and overlay canvas.');
       }

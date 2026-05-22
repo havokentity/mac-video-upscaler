@@ -79,7 +79,7 @@ const closeContext = async (context: BrowserContext | undefined): Promise<void> 
 
 const createExtensionContext = async (workerIndex: number): Promise<BrowserContext> => {
   const profileDir = await mkdtemp(
-    path.join(tmpdir(), `mac-video-upscaler-e2e-${String(workerIndex)}-`),
+    path.join(tmpdir(), `chrome-video-upscaler-e2e-${String(workerIndex)}-`),
   );
 
   return chromium.launchPersistentContext(profileDir, {
@@ -163,7 +163,7 @@ const writeExtensionSettings = async (
 };
 
 const sampleOverlay = async (page: Page): Promise<number[]> =>
-  page.locator('.mac-video-upscaler-overlay').last().evaluate((canvas) => {
+  page.locator('.chrome-video-upscaler-overlay').last().evaluate((canvas) => {
     const source = canvas as HTMLCanvasElement;
     const sampler = document.createElement('canvas');
     sampler.width = 24;
@@ -265,7 +265,7 @@ test('built extension mounts an overlay canvas on a local MP4 video', async ({ b
     await expect(video).toBeVisible();
     await expect(video).toHaveJSProperty('readyState', 4, { timeout: 10_000 });
 
-    const overlay = page.locator('.mac-video-upscaler-overlay');
+    const overlay = page.locator('.chrome-video-upscaler-overlay');
     await expect(overlay).toHaveCount(1, { timeout: 10_000 });
 
     const dimensions = await overlay.evaluate((canvas) => {
@@ -284,7 +284,7 @@ test('built extension mounts an overlay canvas on a local MP4 video', async ({ b
     expect(dimensions.canvasHeight).toBeGreaterThan(0);
 
     await page.keyboard.press('Control+Shift+U');
-    const hud = page.locator('.mac-video-upscaler-hud');
+    const hud = page.locator('.chrome-video-upscaler-hud');
     await expect(hud).toHaveCount(1);
   } finally {
     await closeContext(context);
@@ -317,11 +317,11 @@ test('Crisp mode uses the WebGL2 1.5x upscaler on a local MP4 video', async ({
     const page = context.pages()[0] ?? (await context.newPage());
     await page.goto(server.origin, { waitUntil: 'domcontentloaded' });
 
-    const overlay = page.locator('.mac-video-upscaler-overlay');
+    const overlay = page.locator('.chrome-video-upscaler-overlay');
     await expect(overlay).toHaveCount(1, { timeout: 10_000 });
 
     await page.keyboard.press('Control+Shift+U');
-    await expect(page.locator('.mac-video-upscaler-hud')).toContainText('webgl2 crisp');
+    await expect(page.locator('.chrome-video-upscaler-hud')).toContainText('webgl2 crisp');
     await expect(page.locator('#sample-video')).toHaveCSS('opacity', '0', { timeout: 10_000 });
 
     const dimensions = await overlay.evaluate((canvas) => {
@@ -375,7 +375,7 @@ test('Crisp mode presents dark rendered frames instead of leaving native video o
     const page = context.pages()[0] ?? (await context.newPage());
     await page.goto(`${server.origin}/black-video-page.html`, { waitUntil: 'domcontentloaded' });
 
-    await expect(page.locator('.mac-video-upscaler-overlay')).toHaveCount(1, { timeout: 10_000 });
+    await expect(page.locator('.chrome-video-upscaler-overlay')).toHaveCount(1, { timeout: 10_000 });
     await expect(page.locator('#sample-video')).toHaveCSS('opacity', '0', { timeout: 10_000 });
   } finally {
     await closeContext(context);
@@ -409,7 +409,7 @@ test('Crisp mode reconstructs a low-res source instead of matching native browse
     const page = context.pages()[0] ?? (await context.newPage());
     await page.goto(`${server.origin}/low-res-video-page.html`, { waitUntil: 'domcontentloaded' });
 
-    await expect(page.locator('.mac-video-upscaler-overlay')).toHaveCount(1, { timeout: 10_000 });
+    await expect(page.locator('.chrome-video-upscaler-overlay')).toHaveCount(1, { timeout: 10_000 });
     await expect(page.locator('#sample-video')).toHaveCSS('opacity', '0', { timeout: 10_000 });
     await expect
       .poll(async () => sampleDelta(await sampleOverlay(page), await sampleVideo(page)), {
@@ -448,10 +448,10 @@ test('Crisp sharpness changes the rendered WebGL2 output', async ({
 
     const page = context.pages()[0] ?? (await context.newPage());
     await page.goto(server.origin, { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('.mac-video-upscaler-overlay')).toHaveCount(1, { timeout: 10_000 });
+    await expect(page.locator('.chrome-video-upscaler-overlay')).toHaveCount(1, { timeout: 10_000 });
     await pauseOnStillFrame(page);
     await expect(page.locator('#sample-video')).toHaveCSS('opacity', '0', { timeout: 10_000 });
-    await expect(page.locator('.mac-video-upscaler-hud')).toContainText('0');
+    await expect(page.locator('.chrome-video-upscaler-hud')).toContainText('0');
     const softSample = await sampleOverlay(page);
 
     await writeExtensionSettings(context, {
@@ -462,10 +462,10 @@ test('Crisp sharpness changes the rendered WebGL2 output', async ({
       mode: 'crisp',
       scale: 2,
     });
-    await expect(page.locator('.mac-video-upscaler-overlay')).toHaveCount(1, { timeout: 10_000 });
+    await expect(page.locator('.chrome-video-upscaler-overlay')).toHaveCount(1, { timeout: 10_000 });
     await pauseOnStillFrame(page);
     await expect(page.locator('#sample-video')).toHaveCSS('opacity', '0', { timeout: 10_000 });
-    await expect(page.locator('.mac-video-upscaler-hud')).toContainText('1.00', {
+    await expect(page.locator('.chrome-video-upscaler-hud')).toContainText('1.00', {
       timeout: 10_000,
     });
     await expect
@@ -502,10 +502,10 @@ test('Sharpen changes the rendered WebGL2 output on a paused frame', async ({
 
     const page = context.pages()[0] ?? (await context.newPage());
     await page.goto(server.origin, { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('.mac-video-upscaler-overlay')).toHaveCount(1, { timeout: 10_000 });
+    await expect(page.locator('.chrome-video-upscaler-overlay')).toHaveCount(1, { timeout: 10_000 });
     await pauseOnStillFrame(page);
     await expect(page.locator('#sample-video')).toHaveCSS('opacity', '0', { timeout: 10_000 });
-    await expect(page.locator('.mac-video-upscaler-hud').last()).toContainText('0');
+    await expect(page.locator('.chrome-video-upscaler-hud').last()).toContainText('0');
     const softSample = await sampleOverlay(page);
 
     await writeExtensionSettings(context, {
@@ -515,10 +515,10 @@ test('Sharpen changes the rendered WebGL2 output on a paused frame', async ({
       hudEnabled: true,
       mode: 'sharpen',
     });
-    await expect(page.locator('.mac-video-upscaler-overlay')).toHaveCount(1, { timeout: 10_000 });
+    await expect(page.locator('.chrome-video-upscaler-overlay')).toHaveCount(1, { timeout: 10_000 });
     await pauseOnStillFrame(page);
     await expect(page.locator('#sample-video')).toHaveCSS('opacity', '0', { timeout: 10_000 });
-    await expect(page.locator('.mac-video-upscaler-hud').last()).toContainText('1.00', {
+    await expect(page.locator('.chrome-video-upscaler-hud').last()).toContainText('1.00', {
       timeout: 10_000,
     });
     await expect
@@ -556,10 +556,10 @@ test('Anime changes the rendered WebGL2 output on a paused frame', async ({
 
     const page = context.pages()[0] ?? (await context.newPage());
     await page.goto(server.origin, { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('.mac-video-upscaler-overlay')).toHaveCount(1, { timeout: 10_000 });
+    await expect(page.locator('.chrome-video-upscaler-overlay')).toHaveCount(1, { timeout: 10_000 });
     await pauseOnStillFrame(page);
     await expect(page.locator('#sample-video')).toHaveCSS('opacity', '0', { timeout: 10_000 });
-    await expect(page.locator('.mac-video-upscaler-hud').last()).toContainText('webgl2 anime');
+    await expect(page.locator('.chrome-video-upscaler-hud').last()).toContainText('webgl2 anime');
     const nativeSample = await sampleVideo(page);
 
     await expect
@@ -596,10 +596,10 @@ test('Neural-Lite preview changes the rendered WebGL2 output on a paused frame',
 
     const page = context.pages()[0] ?? (await context.newPage());
     await page.goto(server.origin, { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('.mac-video-upscaler-overlay')).toHaveCount(1, { timeout: 10_000 });
+    await expect(page.locator('.chrome-video-upscaler-overlay')).toHaveCount(1, { timeout: 10_000 });
     await pauseOnStillFrame(page);
     await expect(page.locator('#sample-video')).toHaveCSS('opacity', '0', { timeout: 10_000 });
-    await expect(page.locator('.mac-video-upscaler-hud').last()).toContainText(
+    await expect(page.locator('.chrome-video-upscaler-hud').last()).toContainText(
       'webgl2 neural-lite',
     );
     const nativeSample = await sampleVideo(page);
@@ -639,13 +639,13 @@ test('Neural-Pro RAVU-Lite changes the rendered WebGL2 output on a paused frame'
 
     const page = context.pages()[0] ?? (await context.newPage());
     await page.goto(server.origin, { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('.mac-video-upscaler-overlay')).toHaveCount(1, { timeout: 10_000 });
+    await expect(page.locator('.chrome-video-upscaler-overlay')).toHaveCount(1, { timeout: 10_000 });
     await pauseOnStillFrame(page);
     await expect(page.locator('#sample-video')).toHaveCSS('opacity', '0', { timeout: 10_000 });
-    await expect(page.locator('.mac-video-upscaler-hud').last()).toContainText(
+    await expect(page.locator('.chrome-video-upscaler-hud').last()).toContainText(
       'webgl2 neural-pro',
     );
-    await expect(page.locator('.mac-video-upscaler-hud').last()).toContainText('RAVU-Lite');
+    await expect(page.locator('.chrome-video-upscaler-hud').last()).toContainText('RAVU-Lite');
     const nativeSample = await sampleVideo(page);
 
     await expect
@@ -680,10 +680,10 @@ test('enabled setting rebuilds the active overlay without a page refresh', async
 
     const page = context.pages()[0] ?? (await context.newPage());
     await page.goto(server.origin, { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('.mac-video-upscaler-overlay')).toHaveCount(1, { timeout: 10_000 });
+    await expect(page.locator('.chrome-video-upscaler-overlay')).toHaveCount(1, { timeout: 10_000 });
     await pauseOnStillFrame(page);
     await page.keyboard.press('Control+Shift+U');
-    await expect(page.locator('.mac-video-upscaler-hud')).toContainText('webgl2 crisp');
+    await expect(page.locator('.chrome-video-upscaler-hud')).toContainText('webgl2 crisp');
     await expect(page.locator('#sample-video')).toHaveCSS('opacity', '0', { timeout: 10_000 });
 
     await writeExtensionSettings(context, {
@@ -694,7 +694,7 @@ test('enabled setting rebuilds the active overlay without a page refresh', async
       mode: 'crisp',
     });
 
-    const rebuiltHud = page.locator('.mac-video-upscaler-hud').last();
+    const rebuiltHud = page.locator('.chrome-video-upscaler-hud').last();
     await expect(rebuiltHud).toContainText('disabled', {
       timeout: 10_000,
     });
@@ -732,9 +732,9 @@ test('frame generation setting shows its target in the HUD', async ({
     const page = context.pages()[0] ?? (await context.newPage());
     await page.goto(server.origin, { waitUntil: 'domcontentloaded' });
 
-    await expect(page.locator('.mac-video-upscaler-overlay')).toHaveCount(1, { timeout: 10_000 });
+    await expect(page.locator('.chrome-video-upscaler-overlay')).toHaveCount(1, { timeout: 10_000 });
     await page.keyboard.press('Control+Shift+U');
-    await expect(page.locator('.mac-video-upscaler-hud')).toContainText('target 60 fps', {
+    await expect(page.locator('.chrome-video-upscaler-hud')).toContainText('target 60 fps', {
       timeout: 10_000,
     });
   } finally {
@@ -774,12 +774,12 @@ test('site block list disables the overlay pipeline without hiding the video', a
     const page = context.pages()[0] ?? (await context.newPage());
     await page.goto(server.origin, { waitUntil: 'domcontentloaded' });
 
-    await expect(page.locator('.mac-video-upscaler-overlay')).toHaveCount(1, { timeout: 10_000 });
+    await expect(page.locator('.chrome-video-upscaler-overlay')).toHaveCount(1, { timeout: 10_000 });
     await expect(page.locator('#sample-video')).toHaveCSS('opacity', '1');
 
     await page.keyboard.press('Control+Shift+U');
-    await expect(page.locator('.mac-video-upscaler-hud')).toContainText('disabled');
-    await expect(page.locator('.mac-video-upscaler-hud')).toContainText('Site blocked by 127.0.0.1');
+    await expect(page.locator('.chrome-video-upscaler-hud')).toContainText('disabled');
+    await expect(page.locator('.chrome-video-upscaler-hud')).toContainText('Site blocked by 127.0.0.1');
   } finally {
     await closeContext(context);
     await server.close();
@@ -833,9 +833,9 @@ for (const { mode, expectedHudText, expectedVideoOpacity, settings } of routedMo
       const page = context.pages()[0] ?? (await context.newPage());
       await page.goto(server.origin, { waitUntil: 'domcontentloaded' });
 
-      await expect(page.locator('.mac-video-upscaler-overlay')).toHaveCount(1, { timeout: 10_000 });
+      await expect(page.locator('.chrome-video-upscaler-overlay')).toHaveCount(1, { timeout: 10_000 });
       await page.keyboard.press('Control+Shift+U');
-      await expect(page.locator('.mac-video-upscaler-hud')).toContainText(expectedHudText, {
+      await expect(page.locator('.chrome-video-upscaler-hud')).toContainText(expectedHudText, {
         timeout: 10_000,
       });
       if (expectedVideoOpacity !== undefined) {

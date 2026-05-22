@@ -1,12 +1,12 @@
 {
   "manifest_version": 3,
-  "name": "Mac Video Upscaler",
-  "description": "Metal-tuned GPU video upscaling for HTML5 video on macOS Chrome.",
+  "name": "Chrome Video Upscaler",
+  "description": "GPU video upscaling for HTML5 video in Chrome.",
   "version": "0.0.0",
   "minimum_chrome_version": "121",
   "action": {
     "default_popup": "src/popup/index.html",
-    "default_title": "Mac Video Upscaler"
+    "default_title": "Chrome Video Upscaler"
   },
   "options_page": "src/options/index.html",
   "background": {

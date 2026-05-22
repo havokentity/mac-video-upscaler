@@ -5,8 +5,8 @@ import { classifyFrameAccessError } from '../content/frame-access-probe';
 import { createPipeline, type FramePipeline } from '../upscaler/pipeline';
 import { buildHudRows, sampleRenderedFps } from './hud';
 
-const OVERLAY_CLASS = 'mac-video-upscaler-overlay';
-const HUD_CLASS = 'mac-video-upscaler-hud';
+const OVERLAY_CLASS = 'chrome-video-upscaler-overlay';
+const HUD_CLASS = 'chrome-video-upscaler-hud';
 const PRESENTATION_PROBE_SIZE = 24;
 const PRESENTATION_PROBE_FRAME_DELAY = 3;
 const PRESENTATION_PROBE_MAX_ATTEMPTS = 8;
@@ -201,12 +201,12 @@ export class VideoOverlay {
       const frameAccess = classifyFrameAccessError(error);
       this.hud.hidden = false;
       if (frameAccess.status === 'drm-or-cross-origin-blocked') {
-        this.hud.textContent = 'Mac Video Upscaler: disabled - DRM-protected or cross-origin video cannot be upscaled';
+        this.hud.textContent = 'Chrome Video Upscaler: disabled - DRM-protected or cross-origin video cannot be upscaled';
       } else {
         this.hud.textContent =
           error instanceof Error
-            ? `Mac Video Upscaler: disabled - ${error.message}`
-            : 'Mac Video Upscaler: disabled - unknown frame copy error';
+            ? `Chrome Video Upscaler: disabled - ${error.message}`
+            : 'Chrome Video Upscaler: disabled - unknown frame copy error';
       }
       this.video.style.opacity = this.previousVideoOpacity;
     }
@@ -242,7 +242,7 @@ export class VideoOverlay {
     this.pruneDuplicateYouTubeOverlays();
 
     const title = document.createElement('div');
-    title.textContent = 'Mac Video Upscaler';
+    title.textContent = 'Chrome Video Upscaler';
 
     const rows = buildHudRows(this.pipeline?.status, {
       renderedFps: this.renderedFps,

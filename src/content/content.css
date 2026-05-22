@@ -1,11 +1,11 @@
-.mac-video-upscaler-overlay {
+.chrome-video-upscaler-overlay {
   position: absolute;
   z-index: 2;
   pointer-events: none;
   background: transparent;
 }
 
-.mac-video-upscaler-hud {
+.chrome-video-upscaler-hud {
   position: fixed;
   z-index: 2147483647;
   max-width: min(360px, calc(100vw - 24px));

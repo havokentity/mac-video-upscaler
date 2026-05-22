@@ -14,7 +14,7 @@ swift build -c release
 ## Upscale A Video
 
 ```sh
-swift run -c release mac-video-upscaler-native \
+swift run -c release chrome-video-upscaler-native \
   --input /path/to/original.mp4 \
   --output /path/to/upscaled.mp4 \
   --mode crisp \

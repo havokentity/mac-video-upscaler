@@ -1,19 +1,19 @@
 {
-  "name": "mac-video-upscaler",
+  "name": "chrome-video-upscaler",
   "version": "0.0.0",
-  "description": "Metal-tuned GPU video upscaling Chrome extension for macOS.",
+  "description": "GPU video upscaling Chrome extension for HTML5 video.",
   "type": "module",
   "private": false,
   "license": "MIT",
   "author": "Rajesh Peter D'Monte",
   "repository": {
     "type": "git",
-    "url": "https://github.com/havokentity/mac-video-upscaler.git"
+    "url": "https://github.com/havokentity/chrome-video-upscaler.git"
   },
   "bugs": {
-    "url": "https://github.com/havokentity/mac-video-upscaler/issues"
+    "url": "https://github.com/havokentity/chrome-video-upscaler/issues"
   },
-  "homepage": "https://github.com/havokentity/mac-video-upscaler#readme",
+  "homepage": "https://github.com/havokentity/chrome-video-upscaler#readme",
   "packageManager": "pnpm@11.2.2",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
@@ -24,7 +24,7 @@
     "test:e2e": "playwright test",
     "validate:wgsl": "node scripts/validate-wgsl-metal.mjs",
     "native:build": "swift build -c release --package-path native",
-    "native:sample": "swift run -c release --package-path native mac-video-upscaler-native --input tests/fixtures/sample-video.mp4 --output /tmp/mac-video-upscaler-native-sample.mp4 --mode crisp --scale 2 --sharpness 1",
+    "native:sample": "swift run -c release --package-path native chrome-video-upscaler-native --input tests/fixtures/sample-video.mp4 --output /tmp/chrome-video-upscaler-native-sample.mp4 --mode crisp --scale 2 --sharpness 1",
     "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm validate:wgsl && pnpm build"
   },
   "dependencies": {

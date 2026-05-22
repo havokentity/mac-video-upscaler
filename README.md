@@ -1,6 +1,6 @@
-# Mac Video Upscaler
+# Chrome Video Upscaler
 
-Metal-tuned GPU video upscaling for Chrome on macOS. The project targets Manifest V3, WebGPU through Dawn/Tint/Metal, and a WebGL2 fallback for the fast modes.
+GPU video upscaling for Chrome. The project targets Manifest V3, WebGPU, and WebGL2 so the extension can run on Chrome across macOS, Windows, and Linux. The original tuning target remains Chrome on macOS, where WebGPU lowers through Dawn/Tint to Metal and there is no built-in RTX Video Super Resolution equivalent.
 
 This repository is being built in ordered milestones. The current build mounts a video overlay, routes Auto, Crisp, Sharpen, Anime, Neural-Lite ArtCNN, Neural-Pro RAVU-Lite, Smooth, and experimental WebGL2 filters through working shader paths, persists global and per-site settings, and exposes a HUD with backend, mode, resolution, FPS, frame-generation target, and status details. The HUD can be toggled from the popup or with `Ctrl+Shift+U`, and its visibility persists across settings changes. The overlay also redraws the current decoded frame while paused, which makes still-frame visual comparisons easier.
 
@@ -43,7 +43,7 @@ pnpm dev
 
 The content script finds visible `<video>` elements, mounts a pointer-transparent canvas over the video box, resolves global settings plus allow/block/site overrides for the current hostname, and hands frames to a reusable upscaler pipeline. The original video is kept in the page for audio, controls, captions, fullscreen, and site event handling, then visually hidden while the overlay presents processed frames. Blocked or allow-list-missed sites keep the original video visible and show the disable reason in the HUD.
 
-Crisp, Sharpen, Anime, and Neural-Pro RAVU-Lite currently prefer the WebGL2 paths because those are the visually verified live-video implementations. Neural-Lite now uses ArtCNN C4F16 through ONNX Runtime with WebGPU requested and ORT's WASM fallback available, with the WebGL2 preview path kept for diagnostics. The current WebGPU shader paths upload frames with `copyExternalImageToTexture`, reuse GPU resources, validate WGSL through Tint to MSL, and use `8x8x1` compute workgroups where compute is active.
+Crisp, Sharpen, Anime, and Neural-Pro RAVU-Lite currently prefer the WebGL2 paths because those are the visually verified live-video implementations. Neural-Lite now uses ArtCNN C4F16 through ONNX Runtime with WebGPU requested and ORT's WASM fallback available, with the WebGL2 preview path kept for diagnostics. The current WebGPU shader paths upload frames with `copyExternalImageToTexture`, reuse GPU resources, validate WGSL through Tint to MSL in CI, and use `8x8x1` compute workgroups where compute is active.
 
 Experimental frame generation is a presentation pacing option: it asks the overlay to render at a 60 fps or 120 fps target instead of waiting only for decoded video frame callbacks. This is useful for responsiveness testing and display pacing, but it is not optical-flow motion interpolation yet.
 
@@ -53,7 +53,7 @@ The repo also includes a macOS-native offline test tool in `native/`. This is fo
 
 ```sh
 cd native
-swift run -c release mac-video-upscaler-native \
+swift run -c release chrome-video-upscaler-native \
   --input /path/to/original.mp4 \
   --output /path/to/upscaled.mp4 \
   --mode crisp \
@@ -79,9 +79,9 @@ The native bench currently uses AVFoundation plus Metal compute for the `crisp` 
 - DRM/CORS probe helpers classify frame access failures for clear disable messaging.
 - YouTube: automated Chromium smoke verified the overlay on `https://www.youtube.com/watch?v=jNQXAC9IVRw`.
 - Chrome stable: manual `chrome://extensions` loading is the intended verification path. Playwright-launched Chrome stable profiles did not load the unpacked extension in this environment, while Playwright Chromium did.
-- Native bench: `swift build` succeeds and a fixture MP4 can be upscaled to a valid MP4 with the native CLI.
+- macOS native bench: `swift build` succeeds and a fixture MP4 can be upscaled to a valid MP4 with the native CLI.
 
-MetalFX is native-only and is not reachable from WebGPU, so this extension ships shader upscalers instead of attempting to bridge private platform APIs.
+MetalFX is native-only and is not reachable from WebGPU, so this extension ships shader upscalers instead of attempting to bridge private platform APIs. Windows users with Nvidia RTX hardware may still prefer RTX VSR where available; this project is a browser-extension shader path, not a driver-level temporal ML scaler.
 
 ## Known Limits
 
@@ -101,7 +101,7 @@ node scripts/collect-benchmark.mjs --mode crisp,smooth --duration-ms 5000
 node scripts/collect-benchmark.mjs --output markdown --output-path docs/benchmark-local.md
 ```
 
-Manual Apple Silicon GPU timing numbers are still pending. The first measured table will list the exact Mac chip, Chrome version, source resolution, output target, and per-mode GPU time.
+Manual GPU timing numbers are still pending. The first measured table will list the exact GPU/OS, Chrome version, source resolution, output target, and per-mode GPU time.
 
 ## Licensing
 

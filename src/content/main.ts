@@ -13,7 +13,7 @@ declare global {
 }
 
 const removeInjectedNodes = (): void => {
-  document.querySelectorAll('.mac-video-upscaler-overlay, .mac-video-upscaler-hud').forEach((node) => {
+  document.querySelectorAll('.chrome-video-upscaler-overlay, .chrome-video-upscaler-hud').forEach((node) => {
     node.remove();
   });
 };
@@ -163,7 +163,7 @@ const handleRuntimeMessage = (message: unknown): void => {
     typeof message === 'object' &&
     message !== null &&
     'type' in message &&
-    message.type === 'mac-video-upscaler:toggle-hud'
+    message.type === 'chrome-video-upscaler:toggle-hud'
   ) {
     void loadSettings().then((settings) => {
       void patchSettings({ hudEnabled: !settings.hudEnabled });

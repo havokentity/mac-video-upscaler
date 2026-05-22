@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping make video on macOS Chrome look better.
+Thanks for helping make video in Chrome look better.
 
 ## Development
 

@@ -7,7 +7,7 @@ let package = Package(
     .macOS(.v13),
   ],
   products: [
-    .executable(name: "mac-video-upscaler-native", targets: ["MacVideoUpscalerNative"]),
+    .executable(name: "chrome-video-upscaler-native", targets: ["MacVideoUpscalerNative"]),
   ],
   targets: [
     .executableTarget(

@@ -14,7 +14,7 @@ chrome.commands.onCommand.addListener((command) => {
   if (command === 'toggle-hud') {
     void chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => {
       if (typeof tab.id === 'number') {
-        void chrome.tabs.sendMessage(tab.id, { type: 'mac-video-upscaler:toggle-hud' });
+        void chrome.tabs.sendMessage(tab.id, { type: 'chrome-video-upscaler:toggle-hud' });
       }
     });
   }
