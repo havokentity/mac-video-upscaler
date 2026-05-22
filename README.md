@@ -28,7 +28,7 @@ pnpm dev
 | Auto | WebGPU/WebGL2 | MIT | Cheap first-frame classifier; Neural-Pro remains opt-in. |
 | Crisp | WebGL2 + WebGPU | MIT | FSR 1.0-inspired EASU 12-tap reconstruction plus stronger RCAS/detail sharpening, with extra boost for tiny sources such as 144p. Crisp currently prefers the visually verified WebGL2 path and falls back to WebGPU if needed. The canvas renders at least to the video display backing size so Chrome does not blur the result with a second upscale. |
 | Sharpen | WebGL2 + WebGPU | MIT | Stronger CAS-style 1.0x sharpen with WebGL2 preferred, WebGPU fallback, and output sized to the display backing so stretched low-res video is processed after the browser layout scale. |
-| Anime | WebGL2 + WebGPU | MIT | Anime4K-inspired Mode A and A+A path with WebGL2 preferred for visible line restoration today, plus the WebGPU chain retained for the Metal-tuned path. Exact upstream chain remains planned. |
+| Anime | WebGL2 + WebGPU | MIT | WebGL2 runs bundled upstream Anime4K Fast Mode A/A+A CNN restore and x2 upscaling blocks from bloc97/Anime4K. The WebGPU path is still an Anime4K-inspired staging port while the exact chain is translated to WGSL. |
 | Smooth | WebGPU | Public-domain math | Lanczos/Jinc-style WebGPU upscaler; fuller EWA pass remains planned. |
 | Edge Detect | WebGL2 | MIT | Experimental outline filter for inspecting edges and compression artifacts. |
 | Night Vision | WebGL2 | MIT | Experimental green phosphor filter with scanline/noise styling. |

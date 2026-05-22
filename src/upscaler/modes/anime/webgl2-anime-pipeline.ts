@@ -7,6 +7,12 @@ import {
   type AnimeOutputSize,
   type AnimeSubMode,
 } from './webgpu-anime-pipeline';
+import {
+  ANIME4K_UPSTREAM_COMMIT,
+  MODE_A_FAST_CHAIN,
+  MODE_AA_FAST_CHAIN,
+  type Anime4KPassSource,
+} from './upstream-shader-chain';
 
 const FULLSCREEN_TRIANGLE = new Float32Array([-1, -1, 3, -1, -1, 3]);
 
@@ -22,74 +28,36 @@ void main() {
 }
 `;
 
-const ANIME_FRAGMENT_SHADER_SOURCE = `#version 300 es
+interface Anime4KTextureRecord {
+  readonly framebuffer: WebGLFramebuffer | null;
+  readonly height: number;
+  readonly texture: WebGLTexture;
+  readonly width: number;
+}
+
+interface Anime4KCompiledPass {
+  readonly bindings: readonly string[];
+  readonly description: string;
+  readonly heightExpression: string;
+  readonly outputSizeLocation: WebGLUniformLocation;
+  readonly program: WebGLProgram;
+  readonly samplerLocations: ReadonlyMap<string, WebGLUniformLocation>;
+  readonly saveName: string;
+  readonly sizeLocations: ReadonlyMap<string, WebGLUniformLocation>;
+  readonly sourceFile: string;
+  readonly widthExpression: string;
+}
+
+const PRESENT_FRAGMENT_SHADER_SOURCE = `#version 300 es
 precision highp float;
 
-uniform sampler2D u_video;
-uniform vec2 u_source_size;
-uniform vec2 u_output_size;
-uniform int u_sub_mode;
+uniform sampler2D u_texture;
 
 in vec2 v_uv;
 out vec4 out_color;
 
-float luma(vec3 color) {
-  return dot(color, vec3(0.2126, 0.7152, 0.0722));
-}
-
-vec3 samplePixel(vec2 pixel) {
-  vec2 clampedPixel = clamp(pixel, vec2(0.0), u_source_size - vec2(1.0));
-  return texture(u_video, (clampedPixel + vec2(0.5)) / u_source_size).rgb;
-}
-
 void main() {
-  vec2 inputPixel = gl_FragCoord.xy * (u_source_size / u_output_size) - vec2(0.5);
-  vec2 base = floor(inputPixel);
-  vec2 frac = inputPixel - base;
-
-  vec3 center = texture(u_video, v_uv).rgb;
-  vec3 left = samplePixel(inputPixel + vec2(-1.0, 0.0));
-  vec3 right = samplePixel(inputPixel + vec2(1.0, 0.0));
-  vec3 up = samplePixel(inputPixel + vec2(0.0, -1.0));
-  vec3 down = samplePixel(inputPixel + vec2(0.0, 1.0));
-  vec3 nw = samplePixel(base + vec2(0.0, 0.0));
-  vec3 ne = samplePixel(base + vec2(1.0, 0.0));
-  vec3 sw = samplePixel(base + vec2(0.0, 1.0));
-  vec3 se = samplePixel(base + vec2(1.0, 1.0));
-
-  float horizontalEdge = abs(luma(left) - luma(right));
-  float verticalEdge = abs(luma(up) - luma(down));
-  float diagonalEdge = max(abs(luma(nw) - luma(se)), abs(luma(ne) - luma(sw)));
-  float edge = max(max(horizontalEdge, verticalEdge), diagonalEdge);
-  float edgeMask = smoothstep(0.025, 0.18, edge);
-
-  vec3 axisBlend = horizontalEdge > verticalEdge
-    ? (left + center * 2.0 + right) * 0.25
-    : (up + center * 2.0 + down) * 0.25;
-  vec3 diagonalBlend = abs(luma(nw) - luma(se)) > abs(luma(ne) - luma(sw))
-    ? (nw + center * 2.0 + se) * 0.25
-    : (ne + center * 2.0 + sw) * 0.25;
-  float gridBias = clamp((abs(frac.x - 0.5) + abs(frac.y - 0.5)) * 0.8, 0.0, 1.0);
-  vec3 lineAware = mix(axisBlend, diagonalBlend, gridBias);
-
-  vec3 localMin = min(center, min(min(left, right), min(up, down)));
-  vec3 localMax = max(center, max(max(left, right), max(up, down)));
-  vec3 blur = (left + right + up + down) * 0.25;
-  vec3 detail = center - blur;
-
-  float darkLine = smoothstep(0.08, 0.34, luma(blur) - luma(center));
-  float strength = u_sub_mode == 1 ? 1.0 : 0.72;
-  vec3 restored = mix(center, lineAware, edgeMask * 0.48 * strength);
-  restored += detail * (0.38 + 0.28 * float(u_sub_mode)) * edgeMask;
-  restored = mix(restored, restored * 0.68, darkLine * edgeMask * 0.42 * strength);
-
-  float restoredLuma = max(luma(restored), 0.001);
-  vec3 gentlyFlattened = floor(pow(max(restored, vec3(0.0)), vec3(0.92)) * 10.0 + 0.5) / 10.0;
-  restored = mix(restored, gentlyFlattened, 0.08 + 0.06 * float(u_sub_mode));
-  restored = mix(vec3(restoredLuma), restored, 1.08 + 0.04 * float(u_sub_mode));
-
-  vec3 guard = vec3(0.06 + 0.04 * float(u_sub_mode));
-  out_color = vec4(clamp(restored, max(vec3(0.0), localMin - guard), min(vec3(1.0), localMax + guard)), 1.0);
+  out_color = texture(u_texture, v_uv);
 }
 `;
 
@@ -124,13 +92,13 @@ export class WebGL2AnimePipeline implements FramePipeline {
   private readonly canvas: HTMLCanvasElement;
   private readonly video: HTMLVideoElement;
   private readonly gl: WebGL2RenderingContext;
-  private readonly program: WebGLProgram;
-  private readonly sourceTexture: WebGLTexture;
+  private readonly compiledPasses: Anime4KCompiledPass[];
+  private readonly presentProgram: WebGLProgram;
+  private readonly presentSamplerLocation: WebGLUniformLocation;
+  private readonly sourceTexture: Anime4KTextureRecord;
   private readonly vertexArray: WebGLVertexArrayObject;
   private readonly vertexBuffer: WebGLBuffer;
-  private readonly sourceSizeLocation: WebGLUniformLocation;
-  private readonly outputSizeLocation: WebGLUniformLocation;
-  private readonly subModeLocation: WebGLUniformLocation;
+  private readonly renderTargets = new Map<string, Anime4KTextureRecord>();
   private requestedWidth = 1;
   private requestedHeight = 1;
   private scale: number;
@@ -162,23 +130,35 @@ export class WebGL2AnimePipeline implements FramePipeline {
     }
 
     this.gl = gl;
-    this.program = createProgram(gl, VERTEX_SHADER_SOURCE, ANIME_FRAGMENT_SHADER_SOURCE);
-    this.sourceTexture = createTexture(gl);
+    gl.getExtension('EXT_color_buffer_float');
+    gl.getExtension('EXT_color_buffer_half_float');
+
+    this.sourceTexture = createSourceTexture(gl);
     this.vertexArray = createVertexArray(gl);
     this.vertexBuffer = createVertexBuffer(gl);
-    this.sourceSizeLocation = getUniformLocation(gl, this.program, 'u_source_size');
-    this.outputSizeLocation = getUniformLocation(gl, this.program, 'u_output_size');
-    this.subModeLocation = getUniformLocation(gl, this.program, 'u_sub_mode');
+    this.compiledPasses = compileAnime4KPasses(
+      gl,
+      this.subMode === 'mode-aa' ? MODE_AA_FAST_CHAIN : MODE_A_FAST_CHAIN,
+    );
+    this.presentProgram = createProgram(gl, VERTEX_SHADER_SOURCE, PRESENT_FRAGMENT_SHADER_SOURCE);
+    this.presentSamplerLocation = getUniformLocation(gl, this.presentProgram, 'u_texture');
 
-    bindFullscreenTriangle(gl, this.program, this.vertexArray, this.vertexBuffer);
-    bindSampler(gl, this.program, 'u_video', 0);
+    bindFullscreenTriangle(gl, this.presentProgram, this.vertexArray, this.vertexBuffer);
+    bindSampler(gl, this.presentProgram, 'u_texture', 0);
+    this.compiledPasses.forEach((pass) => {
+      bindFullscreenTriangle(gl, pass.program, this.vertexArray, this.vertexBuffer);
+      pass.samplerLocations.forEach((location, bindingName) => {
+        gl.useProgram(pass.program);
+        gl.uniform1i(location, pass.bindings.indexOf(bindingName));
+      });
+    });
 
     this.status = {
       backend: 'webgl2',
       canvasHeight: this.canvas.height,
       canvasWidth: this.canvas.width,
       mode: 'anime',
-      reason: `Anime4K-inspired WebGL2 ${formatAnimeSubMode(this.subMode)} pipeline active.`,
+      reason: `Upstream Anime4K WebGL2 ${formatAnimeSubMode(this.subMode)} Fast CNN chain active.`,
       scale: this.scale,
       sourceHeight: 0,
       sourceWidth: 0,
@@ -208,7 +188,7 @@ export class WebGL2AnimePipeline implements FramePipeline {
     const gl = this.gl;
 
     gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, this.sourceTexture);
+    gl.bindTexture(gl.TEXTURE_2D, this.sourceTexture.texture);
     try {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.video);
     } catch (error) {
@@ -219,17 +199,28 @@ export class WebGL2AnimePipeline implements FramePipeline {
     }
 
     assertNoGlError(gl, 'uploading the Anime source frame');
+
+    let namedTextures = new Map<string, Anime4KTextureRecord>([
+      ['MAIN', { ...this.sourceTexture, height: sourceHeight, width: sourceWidth }],
+    ]);
+    for (let index = 0; index < this.compiledPasses.length; index += 1) {
+      namedTextures = this.runPass(index, this.compiledPasses[index], namedTextures, output);
+    }
+
+    const finalTexture = namedTextures.get('MAIN') ?? this.sourceTexture;
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, output.width, output.height);
-    gl.useProgram(this.program);
+    gl.useProgram(this.presentProgram);
     gl.bindVertexArray(this.vertexArray);
-    gl.uniform2f(this.sourceSizeLocation, sourceWidth, sourceHeight);
-    gl.uniform2f(this.outputSizeLocation, output.width, output.height);
-    gl.uniform1i(this.subModeLocation, this.subMode === 'mode-aa' ? 1 : 0);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, finalTexture.texture);
+    gl.uniform1i(this.presentSamplerLocation, 0);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
-    assertNoGlError(gl, 'running the Anime4K-inspired WebGL2 pass');
+    assertNoGlError(gl, 'presenting the upstream Anime4K WebGL2 chain');
 
-    this.status.reason = `Anime4K-inspired WebGL2 ${formatAnimeSubMode(this.subMode)} pipeline active.`;
+    this.status.reason =
+      `Upstream Anime4K WebGL2 ${formatAnimeSubMode(this.subMode)} Fast CNN chain active ` +
+      `(${String(this.compiledPasses.length)} passes, ${ANIME4K_UPSTREAM_COMMIT.slice(0, 7)}).`;
     this.status.sourceWidth = sourceWidth;
     this.status.sourceHeight = sourceHeight;
   }
@@ -246,8 +237,15 @@ export class WebGL2AnimePipeline implements FramePipeline {
     gl.useProgram(null);
     gl.deleteBuffer(this.vertexBuffer);
     gl.deleteVertexArray(this.vertexArray);
-    gl.deleteTexture(this.sourceTexture);
-    gl.deleteProgram(this.program);
+    gl.deleteTexture(this.sourceTexture.texture);
+    this.renderTargets.forEach((record) => {
+      gl.deleteFramebuffer(record.framebuffer);
+      gl.deleteTexture(record.texture);
+    });
+    this.compiledPasses.forEach((pass) => {
+      gl.deleteProgram(pass.program);
+    });
+    gl.deleteProgram(this.presentProgram);
     this.destroyed = true;
   }
 
@@ -271,6 +269,64 @@ export class WebGL2AnimePipeline implements FramePipeline {
     this.status.canvasHeight = output.height;
     this.status.scale = this.scale;
     return output;
+  }
+
+  private runPass(
+    index: number,
+    pass: Anime4KCompiledPass,
+    namedTextures: ReadonlyMap<string, Anime4KTextureRecord>,
+    requestedOutput: AnimeOutputSize,
+  ): Map<string, Anime4KTextureRecord> {
+    const gl = this.gl;
+    const width = evaluateDimensionExpression(pass.widthExpression, namedTextures, requestedOutput);
+    const height = evaluateDimensionExpression(pass.heightExpression, namedTextures, requestedOutput);
+    const outputRecord = this.getRenderTarget(`${String(index)}:${pass.saveName}`, width, height);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, outputRecord.framebuffer);
+    gl.viewport(0, 0, width, height);
+    gl.useProgram(pass.program);
+    gl.bindVertexArray(this.vertexArray);
+    gl.uniform2f(pass.outputSizeLocation, width, height);
+
+    pass.bindings.forEach((bindingName, textureUnit) => {
+      const record = namedTextures.get(bindingName);
+      if (!record) {
+        throw new WebGL2AnimePipelineError(
+          `Anime4K pass ${pass.description} requires missing texture ${bindingName}.`,
+        );
+      }
+
+      gl.activeTexture(gl.TEXTURE0 + textureUnit);
+      gl.bindTexture(gl.TEXTURE_2D, record.texture);
+      const sizeLocation = pass.sizeLocations.get(bindingName);
+      if (sizeLocation) {
+        gl.uniform2f(sizeLocation, record.width, record.height);
+      }
+    });
+
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    assertNoGlError(gl, `running upstream ${pass.sourceFile} ${pass.description}`);
+
+    const updated = new Map(namedTextures);
+    updated.set(pass.saveName, outputRecord);
+    return updated;
+  }
+
+  private getRenderTarget(key: string, width: number, height: number): Anime4KTextureRecord {
+    const existing = this.renderTargets.get(key);
+    if (existing && existing.width === width && existing.height === height) {
+      return existing;
+    }
+
+    const gl = this.gl;
+    if (existing) {
+      gl.deleteFramebuffer(existing.framebuffer);
+      gl.deleteTexture(existing.texture);
+    }
+
+    const created = createRenderTargetTexture(gl, width, height);
+    this.renderTargets.set(key, created);
+    return created;
   }
 }
 
@@ -324,7 +380,78 @@ const createProgram = (
   return program;
 };
 
-const createTexture = (gl: WebGL2RenderingContext): WebGLTexture => {
+const compileAnime4KPasses = (
+  gl: WebGL2RenderingContext,
+  passSources: readonly Anime4KPassSource[],
+): Anime4KCompiledPass[] =>
+  passSources.map((passSource) => {
+    const fragmentSource = createAnime4KFragmentShaderSource(passSource);
+    const program = createProgram(gl, VERTEX_SHADER_SOURCE, fragmentSource);
+    const samplerLocations = new Map<string, WebGLUniformLocation>();
+    const sizeLocations = new Map<string, WebGLUniformLocation>();
+    passSource.binds.forEach((bindingName) => {
+      const samplerLocation = gl.getUniformLocation(program, `u_${bindingName}_texture`);
+      const sizeLocation = gl.getUniformLocation(program, `u_${bindingName}_size`);
+      if (samplerLocation) {
+        samplerLocations.set(bindingName, samplerLocation);
+      }
+      if (sizeLocation) {
+        sizeLocations.set(bindingName, sizeLocation);
+      }
+    });
+
+    return {
+      bindings: passSource.binds,
+      description: passSource.description,
+      heightExpression: passSource.heightExpression,
+      outputSizeLocation: getUniformLocation(gl, program, 'u_output_size'),
+      program,
+      samplerLocations,
+      saveName: passSource.saveName,
+      sizeLocations,
+      sourceFile: passSource.sourceFile,
+      widthExpression: passSource.widthExpression,
+    };
+  });
+
+const createAnime4KFragmentShaderSource = (pass: Anime4KPassSource): string => {
+  const bindings = pass.binds
+    .map(
+      (bindingName) => `
+uniform sampler2D u_${bindingName}_texture;
+uniform vec2 u_${bindingName}_size;
+#define ${bindingName}_size u_${bindingName}_size
+#define ${bindingName}_pt (1.0 / u_${bindingName}_size)
+#define ${bindingName}_pos (gl_FragCoord.xy / u_output_size)
+vec4 ${bindingName}_tex(vec2 pos) {
+  return texture(u_${bindingName}_texture, clamp(pos, vec2(0.0), vec2(1.0)));
+}
+vec4 ${bindingName}_texOff(vec2 offset) {
+  return ${bindingName}_tex(${bindingName}_pos + offset * ${bindingName}_pt);
+}
+`,
+    )
+    .join('\n');
+
+  return `#version 300 es
+precision highp float;
+precision highp int;
+
+uniform vec2 u_output_size;
+
+${bindings}
+
+out vec4 out_color;
+
+${pass.code}
+
+void main() {
+  out_color = hook();
+}
+`;
+};
+
+const createSourceTexture = (gl: WebGL2RenderingContext): Anime4KTextureRecord => {
   const texture = gl.createTexture();
 
   gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -334,7 +461,101 @@ const createTexture = (gl: WebGL2RenderingContext): WebGLTexture => {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  return texture;
+  return { framebuffer: null, height: 1, texture, width: 1 };
+};
+
+const createRenderTargetTexture = (
+  gl: WebGL2RenderingContext,
+  width: number,
+  height: number,
+): Anime4KTextureRecord => {
+  const texture = gl.createTexture();
+
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, width, height, 0, gl.RGBA, gl.HALF_FLOAT, null);
+
+  const framebuffer = gl.createFramebuffer();
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+  const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+  if (status !== gl.FRAMEBUFFER_COMPLETE) {
+    gl.deleteFramebuffer(framebuffer);
+    gl.deleteTexture(texture);
+    throw new WebGL2AnimePipelineError(
+      `WebGL2 Anime framebuffer is incomplete: 0x${status.toString(16)}.`,
+    );
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+  return { framebuffer, height, texture, width };
+};
+
+const evaluateDimensionExpression = (
+  expression: string,
+  namedTextures: ReadonlyMap<string, Anime4KTextureRecord>,
+  requestedOutput: AnimeOutputSize,
+): number => {
+  const stack: number[] = [];
+  const tokens = expression.trim().split(/\s+/).filter(Boolean);
+
+  tokens.forEach((token) => {
+    if (token === '*') {
+      const right = stack.pop();
+      const left = stack.pop();
+      if (left === undefined || right === undefined) {
+        throw new WebGL2AnimePipelineError(`Invalid Anime4K dimension expression: ${expression}`);
+      }
+      stack.push(left * right);
+      return;
+    }
+
+    if (token === '/') {
+      const right = stack.pop();
+      const left = stack.pop();
+      if (left === undefined || right === undefined || right === 0) {
+        throw new WebGL2AnimePipelineError(`Invalid Anime4K dimension expression: ${expression}`);
+      }
+      stack.push(left / right);
+      return;
+    }
+
+    const textureReference = token.match(/^([A-Za-z0-9_]+)\.(w|h)$/);
+    if (textureReference) {
+      const [, name, axis] = textureReference;
+      if (name === 'OUTPUT') {
+        stack.push(axis === 'w' ? requestedOutput.width : requestedOutput.height);
+        return;
+      }
+
+      const record = namedTextures.get(name);
+      if (!record) {
+        throw new WebGL2AnimePipelineError(
+          `Anime4K dimension expression ${expression} references missing texture ${name}.`,
+        );
+      }
+      stack.push(axis === 'w' ? record.width : record.height);
+      return;
+    }
+
+    const numericValue = Number(token);
+    if (!Number.isFinite(numericValue)) {
+      throw new WebGL2AnimePipelineError(
+        `Unsupported Anime4K dimension token ${token} in ${expression}.`,
+      );
+    }
+    stack.push(numericValue);
+  });
+
+  if (stack.length !== 1) {
+    throw new WebGL2AnimePipelineError(`Invalid Anime4K dimension expression: ${expression}`);
+  }
+
+  return Math.max(1, Math.round(stack[0]));
 };
 
 const createVertexArray = (gl: WebGL2RenderingContext): WebGLVertexArrayObject => {

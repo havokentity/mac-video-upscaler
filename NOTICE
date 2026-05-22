@@ -13,9 +13,20 @@ Planned attributions before exact shader integration:
   https://github.com/GPUOpen-Effects/FidelityFX-FSR/blob/master/ffx-fsr/ffx_fsr1.h
 - AMD Contrast Adaptive Sharpening, MIT.
 - Anime4K v4 from bloc97/Anime4K, MIT.
-  Local Anime shaders are Anime4K-inspired placeholders written for this
-  project. They do not copy the upstream GLSL chain yet; exact shader imports
-  must preserve upstream headers before landing.
+  Imported from https://github.com/bloc97/Anime4K at commit
+  7684e9586f8dcc738af08a1cdceb024cc184f426. Upstream headers are preserved in:
+  src/upscaler/modes/anime/upstream/Anime4K_Restore_CNN_M.glsl
+  src/upscaler/modes/anime/upstream/Anime4K_Restore_CNN_S.glsl
+  src/upscaler/modes/anime/upstream/Anime4K_Upscale_CNN_x2_M.glsl
+  src/upscaler/modes/anime/upstream/Anime4K_Upscale_CNN_x2_S.glsl
+  src/upscaler/modes/anime/upstream/Anime4K_Clamp_Highlights.glsl
+  The upstream AutoDownscalePre files in the same Anime4K repository are
+  public-domain/Unlicense and their headers are preserved in:
+  src/upscaler/modes/anime/upstream/Anime4K_AutoDownscalePre_x2.glsl
+  src/upscaler/modes/anime/upstream/Anime4K_AutoDownscalePre_x4.glsl
+  The WebGL2 Anime mode runs the upstream Fast Mode A/A+A CNN restore and
+  x2 upscaling blocks. The WebGPU path remains a staging port until the exact
+  chain is translated to WGSL.
 - ArtCNN from Artoriuz/ArtCNN, MIT. Verified source target:
   https://github.com/Artoriuz/ArtCNN at commit b2fb535f3446060f9cb1782937f46385ea6cacc5.
   Local file `src/upscaler/modes/neural-lite/artcnn-c4f16-preview.wgsl`
