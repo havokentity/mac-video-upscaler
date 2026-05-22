@@ -14,6 +14,7 @@ import Metal
 
 enum NativeUpscaleMode: String {
   case crisp
+  case rescue
   case smooth
   case sharpen
 }
@@ -39,6 +40,8 @@ enum NativeUpscaleError: Error, CustomStringConvertible {
   case readerFailed(String)
   case writerFailed(String)
   case metalUnavailable
+  case metalPipelineFailed(String)
+  case metalTextureFailed(String)
 
   var description: String {
     switch self {
@@ -62,6 +65,10 @@ enum NativeUpscaleError: Error, CustomStringConvertible {
       return "Writer failed: \(message)"
     case .metalUnavailable:
       return "Metal is unavailable on this Mac."
+    case .metalPipelineFailed(let message):
+      return "Metal pipeline failed: \(message)"
+    case .metalTextureFailed(let message):
+      return "Metal texture failed: \(message)"
     }
   }
 }
@@ -84,7 +91,8 @@ struct MacVideoUpscalerNative {
     swift run mac-video-upscaler-native --input input.mp4 --output output.mp4 [options]
 
   Options:
-    --mode crisp|smooth|sharpen   Upscale/enhance mode. Default: crisp.
+    --mode crisp|rescue|smooth|sharpen
+                                   Upscale/enhance mode. Default: crisp.
     --scale 1.0...4.0             Output scale. Default: 2.0.
     --sharpness 0.0...2.0         Enhancement strength. Default: 0.75.
     --bitrate bits                Optional H.264 average bitrate.
@@ -244,6 +252,10 @@ func upscaleVideo(options: NativeUpscaleOptions) async throws {
     .workingColorSpace: CGColorSpaceCreateDeviceRGB(),
     .outputColorSpace: CGColorSpaceCreateDeviceRGB(),
   ])
+  let fsrProcessor =
+    options.mode == .crisp
+    ? try NativeMetalFSRProcessor(device: metalDevice, outputSize: outputSize, sharpness: options.sharpness)
+    : nil
 
   guard reader.startReading() else {
     throw NativeUpscaleError.readerFailed(reader.error?.localizedDescription ?? "unknown error")
@@ -274,21 +286,36 @@ func upscaleVideo(options: NativeUpscaleOptions) async throws {
       from: sourcePixelBuffer,
       preferredTransform: preferredTransform
     )
-    let outputImage = processFrame(
-      sourceImage,
-      mode: options.mode,
-      outputSize: outputSize,
-      scale: options.scale,
-      sharpness: options.sharpness
-    )
-
     var outputPixelBuffer: CVPixelBuffer?
     let allocationStatus = CVPixelBufferPoolCreatePixelBuffer(nil, pixelBufferPool, &outputPixelBuffer)
     guard allocationStatus == kCVReturnSuccess, let outputPixelBuffer else {
       throw NativeUpscaleError.pixelBufferAllocationFailed
     }
 
-    context.render(outputImage, to: outputPixelBuffer, bounds: renderBounds, colorSpace: colorSpace)
+    if let fsrProcessor {
+      let normalizedSource = try makePixelBuffer(size: displaySize)
+      context.render(
+        sourceImage,
+        to: normalizedSource,
+        bounds: CGRect(origin: .zero, size: displaySize),
+        colorSpace: colorSpace
+      )
+      try fsrProcessor.process(
+        sourcePixelBuffer: normalizedSource,
+        outputPixelBuffer: outputPixelBuffer,
+        ciContext: context,
+        colorSpace: colorSpace
+      )
+    } else {
+      let outputImage = processFrame(
+        sourceImage,
+        mode: options.mode,
+        outputSize: outputSize,
+        scale: options.scale,
+        sharpness: options.sharpness
+      )
+      context.render(outputImage, to: outputPixelBuffer, bounds: renderBounds, colorSpace: colorSpace)
+    }
 
     while !writerInput.isReadyForMoreMediaData {
       try await Task.sleep(nanoseconds: 2_000_000)
@@ -508,6 +535,457 @@ func finishWriting(_ writer: AVAssetWriter) async throws {
   }
 }
 
+final class NativeMetalFSRProcessor {
+  private let device: MTLDevice
+  private let commandQueue: MTLCommandQueue
+  private let easuPipeline: MTLComputePipelineState
+  private let rcasPipeline: MTLComputePipelineState
+  private let intermediateTexture: MTLTexture
+  private let outputTexture: MTLTexture
+  private var textureCache: CVMetalTextureCache?
+  private var params = FSRParams(
+    sourceSize: SIMD2<Float>(1, 1),
+    outputSize: SIMD2<Float>(1, 1),
+    sharpness: 0.75,
+    scale: 2.0
+  )
+
+  init(device: MTLDevice, outputSize: CGSize, sharpness: Double) throws {
+    self.device = device
+
+    guard let commandQueue = device.makeCommandQueue() else {
+      throw NativeUpscaleError.metalPipelineFailed("could not create command queue")
+    }
+    self.commandQueue = commandQueue
+
+    let library: MTLLibrary
+    do {
+      library = try device.makeLibrary(source: metalFSR1Source, options: nil)
+    } catch {
+      throw NativeUpscaleError.metalPipelineFailed(error.localizedDescription)
+    }
+
+    guard let easuFunction = library.makeFunction(name: "fsr1_easu"),
+          let rcasFunction = library.makeFunction(name: "fsr1_rcas") else {
+      throw NativeUpscaleError.metalPipelineFailed("missing FSR kernels")
+    }
+
+    do {
+      easuPipeline = try device.makeComputePipelineState(function: easuFunction)
+      rcasPipeline = try device.makeComputePipelineState(function: rcasFunction)
+    } catch {
+      throw NativeUpscaleError.metalPipelineFailed(error.localizedDescription)
+    }
+
+    let width = max(1, Int(outputSize.width))
+    let height = max(1, Int(outputSize.height))
+    intermediateTexture = Self.makeTexture(device: device, width: width, height: height, label: "FSR EASU texture")
+    outputTexture = Self.makeTexture(device: device, width: width, height: height, label: "FSR RCAS texture")
+    params.outputSize = SIMD2<Float>(Float(width), Float(height))
+    params.sharpness = Float(max(0.0, min(2.0, sharpness)))
+    params.scale = Float(max(1.0, min(4.0, outputSize.width)))
+
+    let cacheStatus = CVMetalTextureCacheCreate(nil, nil, device, nil, &textureCache)
+    guard cacheStatus == kCVReturnSuccess else {
+      throw NativeUpscaleError.metalTextureFailed("could not create CVMetalTextureCache")
+    }
+  }
+
+  func process(
+    sourcePixelBuffer: CVPixelBuffer,
+    outputPixelBuffer: CVPixelBuffer,
+    ciContext: CIContext,
+    colorSpace: CGColorSpace
+  ) throws {
+    let sourceWidth = CVPixelBufferGetWidth(sourcePixelBuffer)
+    let sourceHeight = CVPixelBufferGetHeight(sourcePixelBuffer)
+    params.sourceSize = SIMD2<Float>(Float(sourceWidth), Float(sourceHeight))
+    params.scale = min(
+      params.outputSize.x / max(1, params.sourceSize.x),
+      params.outputSize.y / max(1, params.sourceSize.y)
+    )
+
+    let sourceTexture = try makeTexture(
+      from: sourcePixelBuffer,
+      pixelFormat: .bgra8Unorm,
+      width: sourceWidth,
+      height: sourceHeight
+    )
+
+    guard let commandBuffer = commandQueue.makeCommandBuffer() else {
+      throw NativeUpscaleError.metalPipelineFailed("could not create command buffer")
+    }
+
+    encode(
+      commandBuffer: commandBuffer,
+      pipeline: easuPipeline,
+      input: sourceTexture,
+      output: intermediateTexture
+    )
+    encode(
+      commandBuffer: commandBuffer,
+      pipeline: rcasPipeline,
+      input: intermediateTexture,
+      output: outputTexture
+    )
+
+    commandBuffer.commit()
+    commandBuffer.waitUntilCompleted()
+
+    if let error = commandBuffer.error {
+      throw NativeUpscaleError.metalPipelineFailed(error.localizedDescription)
+    }
+
+    guard let image = CIImage(mtlTexture: outputTexture, options: [.colorSpace: colorSpace]) else {
+      throw NativeUpscaleError.metalTextureFailed("could not create CIImage from Metal output")
+    }
+
+    let bounds = CGRect(x: 0, y: 0, width: outputTexture.width, height: outputTexture.height)
+    ciContext.render(image, to: outputPixelBuffer, bounds: bounds, colorSpace: colorSpace)
+  }
+
+  private static func makeTexture(
+    device: MTLDevice,
+    width: Int,
+    height: Int,
+    label: String
+  ) -> MTLTexture {
+    let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+      pixelFormat: .rgba8Unorm,
+      width: width,
+      height: height,
+      mipmapped: false
+    )
+    descriptor.usage = [.shaderRead, .shaderWrite]
+    descriptor.storageMode = .private
+    let texture = device.makeTexture(descriptor: descriptor)!
+    texture.label = label
+    return texture
+  }
+
+  private func makeTexture(
+    from pixelBuffer: CVPixelBuffer,
+    pixelFormat: MTLPixelFormat,
+    width: Int,
+    height: Int
+  ) throws -> MTLTexture {
+    guard let textureCache else {
+      throw NativeUpscaleError.metalTextureFailed("texture cache is unavailable")
+    }
+
+    var cvTexture: CVMetalTexture?
+    let status = CVMetalTextureCacheCreateTextureFromImage(
+      nil,
+      textureCache,
+      pixelBuffer,
+      nil,
+      pixelFormat,
+      width,
+      height,
+      0,
+      &cvTexture
+    )
+    guard status == kCVReturnSuccess,
+          let cvTexture,
+          let texture = CVMetalTextureGetTexture(cvTexture) else {
+      throw NativeUpscaleError.metalTextureFailed("could not create Metal texture from pixel buffer")
+    }
+
+    return texture
+  }
+
+  private func encode(
+    commandBuffer: MTLCommandBuffer,
+    pipeline: MTLComputePipelineState,
+    input: MTLTexture,
+    output: MTLTexture
+  ) {
+    guard let encoder = commandBuffer.makeComputeCommandEncoder() else {
+      return
+    }
+
+    var localParams = params
+    encoder.setComputePipelineState(pipeline)
+    encoder.setTexture(input, index: 0)
+    encoder.setTexture(output, index: 1)
+    encoder.setBytes(&localParams, length: MemoryLayout<FSRParams>.stride, index: 0)
+
+    let threadsPerThreadgroup = MTLSize(width: 8, height: 8, depth: 1)
+    let threadgroups = MTLSize(
+      width: (output.width + threadsPerThreadgroup.width - 1) / threadsPerThreadgroup.width,
+      height: (output.height + threadsPerThreadgroup.height - 1) / threadsPerThreadgroup.height,
+      depth: 1
+    )
+    encoder.dispatchThreadgroups(threadgroups, threadsPerThreadgroup: threadsPerThreadgroup)
+    encoder.endEncoding()
+  }
+}
+
+struct FSRParams {
+  var sourceSize: SIMD2<Float>
+  var outputSize: SIMD2<Float>
+  var sharpness: Float
+  var scale: Float
+}
+
+func makePixelBuffer(size: CGSize) throws -> CVPixelBuffer {
+  var pixelBuffer: CVPixelBuffer?
+  let status = CVPixelBufferCreate(
+    nil,
+    max(1, Int(size.width)),
+    max(1, Int(size.height)),
+    kCVPixelFormatType_32BGRA,
+    [
+      kCVPixelBufferMetalCompatibilityKey as String: true,
+      kCVPixelBufferIOSurfacePropertiesKey as String: [:],
+    ] as CFDictionary,
+    &pixelBuffer
+  )
+
+  guard status == kCVReturnSuccess, let pixelBuffer else {
+    throw NativeUpscaleError.pixelBufferAllocationFailed
+  }
+
+  return pixelBuffer
+}
+
+let metalFSR1Source = """
+#include <metal_stdlib>
+using namespace metal;
+
+/*
+ * FidelityFX FSR 1 inspired Metal port.
+ *
+ * Based on AMD FidelityFX Super Resolution 1.0 ffx_fsr1.h
+ * Copyright (c) 2021 Advanced Micro Devices, Inc. MIT licensed.
+ * Local Metal port copyright (c) 2026 Rajesh Peter D'Monte, MIT licensed.
+ */
+
+struct FSRParams {
+  float2 sourceSize;
+  float2 outputSize;
+  float sharpness;
+  float scale;
+};
+
+constexpr sampler linearClampSampler(coord::normalized, address::clamp_to_edge, filter::linear);
+
+float fsr_luma(float3 color) {
+  return color.b * 0.5 + (color.r * 0.5 + color.g);
+}
+
+float3 fsr_sample_source(texture2d<float, access::sample> inputTexture, constant FSRParams& params, float2 pixel) {
+  float2 clampedPixel = clamp(pixel, float2(0.0), params.sourceSize - float2(1.0));
+  float2 uv = (clampedPixel + float2(0.5)) / params.sourceSize;
+  return inputTexture.sample(linearClampSampler, uv).rgb;
+}
+
+float3 fsr_sample_output(texture2d<float, access::sample> inputTexture, constant FSRParams& params, float2 pixel) {
+  float2 clampedPixel = clamp(pixel, float2(0.0), params.outputSize - float2(1.0));
+  float2 uv = (clampedPixel + float2(0.5)) / params.outputSize;
+  return inputTexture.sample(linearClampSampler, uv).rgb;
+}
+
+void fsr_easu_set(thread float2& direction, thread float& length, float weight, float lA, float lB, float lC, float lD, float lE) {
+  float dc = lD - lC;
+  float cb = lC - lB;
+  float lenXBase = max(abs(dc), abs(cb));
+  float dirX = lD - lB;
+  float lenX = clamp(abs(dirX) / max(lenXBase, 0.0001), 0.0, 1.0);
+  direction.x += dirX * weight;
+  length += lenX * lenX * weight;
+
+  float ec = lE - lC;
+  float ca = lC - lA;
+  float lenYBase = max(abs(ec), abs(ca));
+  float dirY = lE - lA;
+  float lenY = clamp(abs(dirY) / max(lenYBase, 0.0001), 0.0, 1.0);
+  direction.y += dirY * weight;
+  length += lenY * lenY * weight;
+}
+
+float fsr_easu_tap_weight(float2 offset, float2 direction, float2 len2, float lob, float clipValue) {
+  float2 v = float2(
+    offset.x * direction.x + offset.y * direction.y,
+    offset.x * -direction.y + offset.y * direction.x
+  );
+  v *= len2;
+  float d2 = min(dot(v, v), clipValue);
+  float wb = 0.4 * d2 - 1.0;
+  float wa = lob * d2 - 1.0;
+  wb *= wb;
+  wa *= wa;
+  wb = 1.5625 * wb - 0.5625;
+  return wb * wa;
+}
+
+kernel void fsr1_easu(
+  texture2d<float, access::sample> inputTexture [[texture(0)]],
+  texture2d<float, access::write> outputTexture [[texture(1)]],
+  constant FSRParams& params [[buffer(0)]],
+  uint2 pixel [[thread_position_in_grid]]
+) {
+  if (pixel.x >= uint(params.outputSize.x) || pixel.y >= uint(params.outputSize.y)) {
+    return;
+  }
+
+  float2 pp = (float2(pixel) + float2(0.5)) * (params.sourceSize / params.outputSize) - float2(0.5);
+  float2 fp = floor(pp);
+  pp -= fp;
+
+  float3 b = fsr_sample_source(inputTexture, params, fp + float2(0.0, -1.0));
+  float3 c = fsr_sample_source(inputTexture, params, fp + float2(1.0, -1.0));
+  float3 e = fsr_sample_source(inputTexture, params, fp + float2(-1.0, 0.0));
+  float3 f = fsr_sample_source(inputTexture, params, fp + float2(0.0, 0.0));
+  float3 g = fsr_sample_source(inputTexture, params, fp + float2(1.0, 0.0));
+  float3 h = fsr_sample_source(inputTexture, params, fp + float2(2.0, 0.0));
+  float3 i = fsr_sample_source(inputTexture, params, fp + float2(-1.0, 1.0));
+  float3 j = fsr_sample_source(inputTexture, params, fp + float2(0.0, 1.0));
+  float3 k = fsr_sample_source(inputTexture, params, fp + float2(1.0, 1.0));
+  float3 l = fsr_sample_source(inputTexture, params, fp + float2(2.0, 1.0));
+  float3 n = fsr_sample_source(inputTexture, params, fp + float2(0.0, 2.0));
+  float3 o = fsr_sample_source(inputTexture, params, fp + float2(1.0, 2.0));
+
+  float bL = fsr_luma(b);
+  float cL = fsr_luma(c);
+  float eL = fsr_luma(e);
+  float fL = fsr_luma(f);
+  float gL = fsr_luma(g);
+  float hL = fsr_luma(h);
+  float iL = fsr_luma(i);
+  float jL = fsr_luma(j);
+  float kL = fsr_luma(k);
+  float lL = fsr_luma(l);
+  float nL = fsr_luma(n);
+  float oL = fsr_luma(o);
+
+  float2 direction = float2(0.0);
+  float length = 0.0;
+  fsr_easu_set(direction, length, (1.0 - pp.x) * (1.0 - pp.y), bL, eL, fL, gL, jL);
+  fsr_easu_set(direction, length, pp.x * (1.0 - pp.y), cL, fL, gL, hL, kL);
+  fsr_easu_set(direction, length, (1.0 - pp.x) * pp.y, fL, iL, jL, kL, nL);
+  fsr_easu_set(direction, length, pp.x * pp.y, gL, jL, kL, lL, oL);
+
+  float directionLength = dot(direction, direction);
+  if (directionLength < 1.0 / 32768.0) {
+    direction = float2(1.0, 0.0);
+  } else {
+    direction *= rsqrt(directionLength);
+  }
+
+  length *= 0.5;
+  length *= length;
+  float stretch = dot(direction, direction) / max(max(abs(direction.x), abs(direction.y)), 0.0001);
+  float2 len2 = float2(1.0 + (stretch - 1.0) * length, 1.0 - 0.5 * length);
+  float lob = 0.5 + ((0.25 - 0.04) - 0.5) * length;
+  float clipValue = 1.0 / lob;
+
+  float3 min4 = min(min(f, g), min(j, k));
+  float3 max4 = max(max(f, g), max(j, k));
+  float3 color = float3(0.0);
+  float weight = 0.0;
+
+  float wb = fsr_easu_tap_weight(float2(0.0, -1.0) - pp, direction, len2, lob, clipValue);
+  color += b * wb; weight += wb;
+  float wc = fsr_easu_tap_weight(float2(1.0, -1.0) - pp, direction, len2, lob, clipValue);
+  color += c * wc; weight += wc;
+  float wi = fsr_easu_tap_weight(float2(-1.0, 1.0) - pp, direction, len2, lob, clipValue);
+  color += i * wi; weight += wi;
+  float wj = fsr_easu_tap_weight(float2(0.0, 1.0) - pp, direction, len2, lob, clipValue);
+  color += j * wj; weight += wj;
+  float wf = fsr_easu_tap_weight(float2(0.0, 0.0) - pp, direction, len2, lob, clipValue);
+  color += f * wf; weight += wf;
+  float we = fsr_easu_tap_weight(float2(-1.0, 0.0) - pp, direction, len2, lob, clipValue);
+  color += e * we; weight += we;
+  float wk = fsr_easu_tap_weight(float2(1.0, 1.0) - pp, direction, len2, lob, clipValue);
+  color += k * wk; weight += wk;
+  float wl = fsr_easu_tap_weight(float2(2.0, 1.0) - pp, direction, len2, lob, clipValue);
+  color += l * wl; weight += wl;
+  float wh = fsr_easu_tap_weight(float2(2.0, 0.0) - pp, direction, len2, lob, clipValue);
+  color += h * wh; weight += wh;
+  float wg = fsr_easu_tap_weight(float2(1.0, 0.0) - pp, direction, len2, lob, clipValue);
+  color += g * wg; weight += wg;
+  float wo = fsr_easu_tap_weight(float2(1.0, 2.0) - pp, direction, len2, lob, clipValue);
+  color += o * wo; weight += wo;
+  float wn = fsr_easu_tap_weight(float2(0.0, 2.0) - pp, direction, len2, lob, clipValue);
+  color += n * wn; weight += wn;
+
+  float3 resolved = clamp(color / max(weight, 0.0001), min4, max4);
+  outputTexture.write(float4(resolved, 1.0), pixel);
+}
+
+kernel void fsr1_rcas(
+  texture2d<float, access::sample> inputTexture [[texture(0)]],
+  texture2d<float, access::write> outputTexture [[texture(1)]],
+  constant FSRParams& params [[buffer(0)]],
+  uint2 pixel [[thread_position_in_grid]]
+) {
+  if (pixel.x >= uint(params.outputSize.x) || pixel.y >= uint(params.outputSize.y)) {
+    return;
+  }
+
+  float2 ip = float2(pixel);
+  float scaleRatio = min(params.outputSize.x / params.sourceSize.x, params.outputSize.y / params.sourceSize.y);
+  float tinySourceBoost = smoothstep(3.0, 10.0, scaleRatio);
+  float rescueBoost = smoothstep(2.0, 5.5, scaleRatio);
+  float sampleRadius = mix(1.0, 2.15, tinySourceBoost);
+  float3 a = fsr_sample_output(inputTexture, params, ip + float2(-sampleRadius, -sampleRadius));
+  float3 b = fsr_sample_output(inputTexture, params, ip + float2(0.0, -sampleRadius));
+  float3 c = fsr_sample_output(inputTexture, params, ip + float2(sampleRadius, -sampleRadius));
+  float3 d = fsr_sample_output(inputTexture, params, ip + float2(-sampleRadius, 0.0));
+  float3 e = fsr_sample_output(inputTexture, params, ip);
+  float3 f = fsr_sample_output(inputTexture, params, ip + float2(sampleRadius, 0.0));
+  float3 G = fsr_sample_output(inputTexture, params, ip + float2(-sampleRadius, sampleRadius));
+  float3 h = fsr_sample_output(inputTexture, params, ip + float2(0.0, sampleRadius));
+  float3 I = fsr_sample_output(inputTexture, params, ip + float2(sampleRadius, sampleRadius));
+
+  float bL = fsr_luma(b);
+  float dL = fsr_luma(d);
+  float eL = fsr_luma(e);
+  float fL = fsr_luma(f);
+  float hL = fsr_luma(h);
+  float aL = fsr_luma(a);
+  float cL = fsr_luma(c);
+  float gL = fsr_luma(G);
+  float iL = fsr_luma(I);
+  float rangeMax = max(max(max(max(bL, dL), max(eL, fL)), hL), max(max(aL, cL), max(gL, iL)));
+  float rangeMin = min(min(min(min(bL, dL), min(eL, fL)), hL), min(min(aL, cL), min(gL, iL)));
+  float noise = abs(0.25 * (bL + dL + fL + hL) - eL) / max(rangeMax - rangeMin, 0.0001);
+  noise = 1.0 - 0.5 * clamp(noise, 0.0, 1.0);
+
+  float3 mn4 = min(min(min(b, d), min(f, h)), min(min(a, c), min(G, I)));
+  float3 mx4 = max(max(max(b, d), max(f, h)), max(max(a, c), max(G, I)));
+  float3 hitMin = min(mn4, e) / max(4.0 * mx4, float3(0.0001));
+  float3 hitMax = (float3(1.0) - max(mx4, e)) / min(4.0 * mn4 - float3(4.0), float3(-0.0001));
+  float3 lobeRgb = max(-hitMin, hitMax);
+  float userSharpness = clamp(params.sharpness, 0.0, 2.0);
+  float sharpness = mix(0.55, 1.45, min(userSharpness, 1.0)) + rescueBoost * 0.22;
+  float baseLobe = min(max(lobeRgb.r, max(lobeRgb.g, lobeRgb.b)), 0.0);
+  float lobe = max(-0.1875, baseLobe * sharpness * noise);
+  float rcpL = 1.0 / (4.0 * lobe + 1.0);
+  float3 outColor = clamp((lobe * (b + d + h + f) + e) * rcpL, float3(0.0), float3(1.0));
+  float3 crossMean = 0.25 * (b + d + f + h);
+  float3 wideMean = 0.125 * (a + b + c + d + f + G + h + I);
+  float3 highPass = e - crossMean;
+  float3 microPass = e - wideMean;
+  float edgeMask = smoothstep(0.008, 0.13, rangeMax - rangeMin);
+  float lineMask = smoothstep(0.012, 0.22, max(abs(dL - fL), abs(bL - hL)));
+  float detailStrength = (mix(0.18, 1.05, min(userSharpness, 1.0)) + rescueBoost * 0.62) * max(edgeMask, lineMask);
+  float microStrength = rescueBoost * mix(0.08, 0.42, min(userSharpness, 1.0)) * noise;
+  float contrastStrength = 0.045 * min(userSharpness, 1.0) + rescueBoost * 0.055;
+  float3 flatSmoothing = mix(e, wideMean, rescueBoost * (1.0 - edgeMask) * 0.06);
+  outColor = mix(outColor, flatSmoothing, rescueBoost * (1.0 - edgeMask) * 0.18);
+  float3 guard = float3(mix(0.04, 0.16, max(min(userSharpness, 1.0), rescueBoost)));
+  outColor = clamp(
+    outColor + highPass * detailStrength + microPass * microStrength + (e - float3(0.5)) * contrastStrength * edgeMask,
+    max(float3(0.0), min(mn4, e) - guard),
+    min(float3(1.0), max(mx4, e) + guard)
+  );
+
+  outputTexture.write(float4(outColor, 1.0), pixel);
+}
+"""
+
 func normalizedImage(from pixelBuffer: CVPixelBuffer, preferredTransform: CGAffineTransform) -> CIImage {
   let transformed = CIImage(cvPixelBuffer: pixelBuffer).transformed(by: preferredTransform)
   let extent = transformed.extent
@@ -541,13 +1019,15 @@ func processFrame(
   let cropped = scaled.cropped(to: CGRect(origin: .zero, size: outputSize))
 
   switch mode {
+  case .crisp:
+    return applyCrispRescue(cropped, sharpness: sharpness, rescue: 1.0)
+  case .rescue:
+    let rescue = min(1.0, max(0.0, (scale - 1.4) / 2.2))
+    return applyCrispRescue(cropped, sharpness: sharpness, rescue: rescue)
   case .smooth:
     return cropped
   case .sharpen:
     return applySharpen(cropped, sharpness: sharpness, rescue: 0.0)
-  case .crisp:
-    let rescue = min(1.0, max(0.0, (scale - 1.4) / 2.2))
-    return applyCrispRescue(cropped, sharpness: sharpness, rescue: rescue)
   }
 }
 

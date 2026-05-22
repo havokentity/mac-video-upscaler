@@ -2,7 +2,7 @@
 
 This folder contains a macOS-native offline benchmark for the upscaler work. It is intentionally separate from the Chrome extension so we can judge the algorithm without YouTube, DOM overlays, browser canvas presentation, or compositor scaling in the way.
 
-The first tool is a Swift command-line app using AVFoundation decode/encode and a Metal-backed Core Image context.
+The first tool is a Swift command-line app using AVFoundation decode/encode and a Metal compute implementation of the FSR-style `crisp` path. The previous Core Image enhancement path remains available as `rescue` for comparison.
 
 ## Build
 
@@ -25,7 +25,8 @@ swift run -c release mac-video-upscaler-native \
 
 Modes:
 
-- `crisp`: Lanczos scale plus aggressive local sharpening/detail rescue.
+- `crisp`: Metal compute EASU-style reconstruction plus RCAS/detail pass.
+- `rescue`: Lanczos scale plus aggressive local sharpening/detail rescue.
 - `smooth`: Lanczos scale only.
 - `sharpen`: Resize to the requested output and apply luminance/unsharp sharpening.
 

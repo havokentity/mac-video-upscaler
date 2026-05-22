@@ -64,7 +64,7 @@ swift run -c release mac-video-upscaler-native \
 
 The CLI writes `native/last-run.json` plus `native/last-compare.html`, and `--open-compare` opens the side-by-side page automatically. You can also open `native/compare.html` manually and choose files, or pass `left`/`right` file URLs as query params.
 
-The native bench currently uses AVFoundation plus a Metal-backed Core Image pipeline. It is video-only for now, by design, so visual quality can be judged without audio muxing or browser presentation noise.
+The native bench currently uses AVFoundation plus Metal compute for the `crisp` path, with the earlier Core Image enhancement path available as `rescue`. It is video-only for now, by design, so visual quality can be judged without audio muxing or browser presentation noise.
 
 ## Verification Status
 
