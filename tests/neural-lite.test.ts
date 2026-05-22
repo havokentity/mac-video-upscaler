@@ -1,14 +1,21 @@
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  ARTCNN_C4F16_MODEL_PATH,
   ARTCNN_UPSTREAM,
+  ORT_JSEP_MJS_PATH,
+  ORT_JSEP_WASM_PATH,
   computeNeuralLiteOutputSize,
   createWebGpuNeuralLitePipeline,
+  getArtCnnModelUrl,
   getNeuralLiteDisabledReason,
+  getOrtWasmPaths,
   normalizeNeuralLiteScale,
 } from '../src/upscaler/modes/neural-lite';
 
-describe('Neural-Lite ArtCNN skeleton', () => {
+describe('Neural-Lite ArtCNN', () => {
   it('records verified upstream ArtCNN attribution', () => {
     expect(ARTCNN_UPSTREAM.repository).toBe('https://github.com/Artoriuz/ArtCNN');
     expect(ARTCNN_UPSTREAM.license).toBe('MIT');
@@ -66,7 +73,21 @@ describe('Neural-Lite ArtCNN skeleton', () => {
     ).toEqual({ height: 2160, width: 3840 });
   });
 
-  it('keeps the WebGPU ArtCNN port placeholder disabled until weights land', async () => {
+  it('resolves packaged ArtCNN ONNX and ORT assets', () => {
+    expect(ARTCNN_C4F16_MODEL_PATH).toBe('models/artcnn/ArtCNN_C4F16.onnx');
+    expect(ORT_JSEP_MJS_PATH).toBe('ort/ort-wasm-simd-threaded.jsep.mjs');
+    expect(ORT_JSEP_WASM_PATH).toBe('ort/ort-wasm-simd-threaded.jsep.wasm');
+    expect(getArtCnnModelUrl()).toBe('/models/artcnn/ArtCNN_C4F16.onnx');
+    expect(getOrtWasmPaths()).toEqual({
+      mjs: '/ort/ort-wasm-simd-threaded.jsep.mjs',
+      wasm: '/ort/ort-wasm-simd-threaded.jsep.wasm',
+    });
+    expect(existsSync(join(process.cwd(), 'public', ARTCNN_C4F16_MODEL_PATH))).toBe(true);
+    expect(existsSync(join(process.cwd(), 'public', ORT_JSEP_MJS_PATH))).toBe(true);
+    expect(existsSync(join(process.cwd(), 'public', ORT_JSEP_WASM_PATH))).toBe(true);
+  });
+
+  it('keeps the shader-native WebGPU ArtCNN port placeholder disabled until weights land', async () => {
     const canvas = {
       height: 360,
       width: 640,

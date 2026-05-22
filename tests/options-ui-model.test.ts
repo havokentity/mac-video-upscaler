@@ -68,7 +68,7 @@ describe('options UI model', () => {
       implemented: true,
       scaleVisible: true,
       sharpnessVisible: false,
-      supportNote: 'Neural-Lite preview uses WebGL2 first; ArtCNN weight port is still pending.',
+      supportNote: 'Neural-Lite requests ONNX Runtime WebGPU with WASM fallback; Force WebGL2 uses the preview fallback.',
     });
   });
 

@@ -13,6 +13,9 @@
     "service_worker": "src/background/service-worker.ts",
     "type": "module"
   },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
   "content_scripts": [
     {
       "matches": [
@@ -34,6 +37,16 @@
   ],
   "permissions": ["storage", "activeTab"],
   "host_permissions": ["http://*/*", "https://*/*"],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "models/artcnn/ArtCNN_C4F16.onnx",
+        "ort/ort-wasm-simd-threaded.jsep.mjs",
+        "ort/ort-wasm-simd-threaded.jsep.wasm"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ],
   "commands": {
     "toggle-hud": {
       "suggested_key": {

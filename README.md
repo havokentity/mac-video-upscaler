@@ -2,7 +2,7 @@
 
 Metal-tuned GPU video upscaling for Chrome on macOS. The project targets Manifest V3, WebGPU through Dawn/Tint/Metal, and a WebGL2 fallback for the fast modes.
 
-This repository is being built in ordered milestones. The current build mounts a video overlay, routes Auto, Crisp, Sharpen, Anime, Neural-Lite Preview, Neural-Pro RAVU-Lite, Smooth, and experimental WebGL2 filters through working shader paths, persists global and per-site settings, and exposes a HUD with backend, mode, resolution, FPS, frame-generation target, and status details. The HUD can be toggled from the popup or with `Ctrl+Shift+U`, and its visibility persists across settings changes. The overlay also redraws the current decoded frame while paused, which makes still-frame visual comparisons easier.
+This repository is being built in ordered milestones. The current build mounts a video overlay, routes Auto, Crisp, Sharpen, Anime, Neural-Lite ArtCNN, Neural-Pro RAVU-Lite, Smooth, and experimental WebGL2 filters through working shader paths, persists global and per-site settings, and exposes a HUD with backend, mode, resolution, FPS, frame-generation target, and status details. The HUD can be toggled from the popup or with `Ctrl+Shift+U`, and its visibility persists across settings changes. The overlay also redraws the current decoded frame while paused, which makes still-frame visual comparisons easier.
 
 ## Install for Development
 
@@ -36,14 +36,14 @@ pnpm dev
 | CRT | WebGL2 | MIT | Experimental scanline, vignette, and color-fringe filter. |
 | Inverted Colors | WebGL2 | MIT | Experimental inverted color filter. |
 | Cartoon Rotoscope | WebGL2 | MIT | Experimental toon-shader look with posterized colors and inked edges. |
-| Neural-Lite | WebGL2 + WebGPU staging | MIT | Residual enhancement preview is enabled for testing. ArtCNN attribution is verified and the real C4F16 weight/pipeline port remains pending. |
+| Neural-Lite | ONNX Runtime WebGPU + WASM fallback, WebGL2 diagnostic fallback | MIT | Runs the imported ArtCNN C4F16 ONNX model through ONNX Runtime with WebGPU requested and WASM available as ORT's safety fallback. Force WebGL2 keeps the older residual preview fallback for diagnostics. |
 | Neural-Pro | WebGL2 + WebGPU staging | LGPL-3.0-or-later | WebGL2 runs imported upstream RAVU-Lite-AR r3. RAVU-Zoom remains pending because its LUT/shader payload is much larger and needs a separate performance pass. |
 
 ## How It Works
 
 The content script finds visible `<video>` elements, mounts a pointer-transparent canvas over the video box, resolves global settings plus allow/block/site overrides for the current hostname, and hands frames to a reusable upscaler pipeline. The original video is kept in the page for audio, controls, captions, fullscreen, and site event handling, then visually hidden while the overlay presents processed frames. Blocked or allow-list-missed sites keep the original video visible and show the disable reason in the HUD.
 
-Crisp, Sharpen, Anime, Neural-Lite Preview, and Neural-Pro RAVU-Lite currently prefer the WebGL2 paths because those are the visually verified live-video implementations; WebGPU remains available as a fallback or staging path and is required for Smooth. The current WebGPU paths upload frames with `copyExternalImageToTexture`, reuse GPU resources, validate WGSL through Tint to MSL, and use `8x8x1` compute workgroups where compute is active.
+Crisp, Sharpen, Anime, and Neural-Pro RAVU-Lite currently prefer the WebGL2 paths because those are the visually verified live-video implementations. Neural-Lite now uses ArtCNN C4F16 through ONNX Runtime with WebGPU requested and ORT's WASM fallback available, with the WebGL2 preview path kept for diagnostics. The current WebGPU shader paths upload frames with `copyExternalImageToTexture`, reuse GPU resources, validate WGSL through Tint to MSL, and use `8x8x1` compute workgroups where compute is active.
 
 Experimental frame generation is a presentation pacing option: it asks the overlay to render at a 60 fps or 120 fps target instead of waiting only for decoded video frame callbacks. This is useful for responsiveness testing and display pacing, but it is not optical-flow motion interpolation yet.
 
@@ -71,7 +71,8 @@ The native bench currently uses AVFoundation plus Metal compute for the `crisp` 
 - Generic HTML5 MP4 fixture: automated Playwright smoke test loads the unpacked extension from `dist`, mounts the overlay, and verifies nonzero canvas dimensions.
 - WebGL2 Crisp: automated Playwright smoke test writes extension settings, activates Crisp, verifies HUD mode text, checks backing resolution, and pixel-diffs sharpness changes on a paused frame.
 - WebGL2 Sharpen: automated Playwright smoke test pixel-diffs CAS sharpness changes on a paused frame.
-- WebGL2 Anime, Neural-Lite Preview, and Neural-Pro RAVU-Lite: automated Playwright smoke tests pixel-diff the non-pro modes against the native paused frame and route Neural-Pro through its HUD status so the paths cannot silently no-op.
+- WebGL2 Anime and Neural-Pro RAVU-Lite: automated Playwright smoke tests pixel-diff Anime against the native paused frame and route Neural-Pro through its HUD status so the paths cannot silently no-op.
+- Neural-Lite ArtCNN: ONNX Runtime path is packaged with a small ArtCNN C4F16 model and ORT WebGPU sidecar. Browser smoke coverage verifies the path initializes; headless Chromium may let ORT fall back to WASM even when the WebGPU provider is requested.
 - Routed modes: automated Playwright smoke verifies Sharpen, Anime, Smooth, Neural-Lite, and Neural-Pro reach their expected HUD status.
 - Per-site controls: automated Playwright smoke verifies a blocked hostname disables the overlay pipeline without hiding the original video.
 - WebGPU shaders: CI validates WGSL to MSL with Dawn Tint.

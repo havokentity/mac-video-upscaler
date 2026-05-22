@@ -3,7 +3,11 @@ import { classifyVideoFrame } from './auto/classifier';
 import { createWebGL2AnimePipeline, WebGpuAnimePipeline } from './modes/anime';
 import { createWebGL2CrispPipeline, WebGpuCrispPipeline } from './modes/crisp';
 import { createWebGL2FunPipeline, type FunFilterMode } from './modes/fun';
-import { createWebGL2NeuralLitePipeline, createWebGpuNeuralLitePipeline } from './modes/neural-lite';
+import {
+  createWebGL2NeuralLitePipeline,
+  createWebGpuArtCnnPipeline,
+  createWebGpuNeuralLitePipeline,
+} from './modes/neural-lite';
 import { createWebGL2NeuralProPipeline, createWebGpuNeuralProPipeline } from './modes/neural-pro';
 import { createWebGL2SharpenPipeline, WebGpuSharpenPipeline } from './modes/sharpen';
 import { WebGpuSmoothPipeline } from './modes/smooth';
@@ -95,6 +99,17 @@ export const createPipeline = async (
       : `Auto -> ${autoClassification.mode}${mode !== autoClassification.mode ? ` (using ${mode} until ${autoClassification.mode} lands)` : ''}; `;
 
   if (requestedMode === 'neural-lite') {
+    if ('gpu' in navigator && navigator.gpu && !settings.forceWebGL2) {
+      try {
+        return createWebGpuArtCnnPipeline(canvas, video, {
+          scale: settings.scale,
+        });
+      } catch (error) {
+        const reason = getErrorMessage(error, 'Unknown WebGPU ArtCNN Neural-Lite error.');
+        return new DisabledPipeline(`WebGPU ArtCNN Neural-Lite failed: ${reason}`, 'neural-lite');
+      }
+    }
+
     try {
       return createWebGL2NeuralLitePipeline(canvas, video, {
         scale: settings.scale,

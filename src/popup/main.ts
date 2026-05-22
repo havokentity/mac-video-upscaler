@@ -21,7 +21,7 @@ const MODE_LABELS: Record<UpscalerMode, string> = {
   crt: 'CRT',
   invert: 'Inverted Colors',
   cartoon: 'Cartoon Rotoscope',
-  'neural-lite': 'Neural-Lite Preview',
+  'neural-lite': 'Neural-Lite (ArtCNN)',
   'neural-pro': 'Neural-Pro (RAVU-Lite)',
 };
 
@@ -38,7 +38,7 @@ const MODE_NOTES: Record<UpscalerMode, string> = {
   crt: 'Experimental CRT scanlines, vignette, and color-fringe styling.',
   invert: 'Experimental inverted color filter.',
   cartoon: 'Experimental toon-shader rotoscope look with posterized colors and inked edges.',
-  'neural-lite': 'Small residual enhancement preview; ArtCNN weights remain the target port.',
+  'neural-lite': 'Real ArtCNN C4F16 ONNX model through ONNX Runtime, with WebGL2 preview fallback.',
   'neural-pro': 'LGPL RAVU-Lite-AR r3 port. RAVU-Zoom remains pending.',
 };
 
@@ -156,7 +156,7 @@ const updateModeControls = (): void => {
         : isAnime
           ? 'Anime uses the visually verified WebGL2 path first, with WebGPU fallback.'
         : isNeuralLite
-          ? 'Neural-Lite preview uses WebGL2 first; ArtCNN weight port is still pending.'
+          ? 'Neural-Lite requests ONNX Runtime WebGPU with WASM fallback; Force WebGL2 uses the preview fallback.'
         : isNeuralPro
           ? 'Neural-Pro runs the imported LGPL RAVU-Lite WebGL2 port; RAVU-Zoom is pending.'
         : isFunFilter

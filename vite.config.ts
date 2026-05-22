@@ -5,6 +5,9 @@ import manifest from './manifest.json' with { type: 'json' };
 
 export default defineConfig({
   plugins: [crx({ manifest })],
+  resolve: {
+    conditions: ['onnxruntime-web-use-extern-wasm'],
+  },
   build: {
     sourcemap: true,
     emptyOutDir: true,

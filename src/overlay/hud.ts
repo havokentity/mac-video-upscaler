@@ -112,6 +112,7 @@ export const buildHudRows = (
     formatStatusValue(getNumberField(richStatus, 'scale')),
     formatStatusValue(getNumberField(richStatus, 'sharpness')),
     formatStatusValue(getStringField(richStatus, 'variant')),
+    formatStatusValue(getStringField(richStatus, 'provider')),
     formatStatusValue(getStringField(richStatus, 'subMode')),
     formatStatusValue(getStringField(richStatus, 'frameGeneration')),
   ].filter((value): value is string => value !== undefined);

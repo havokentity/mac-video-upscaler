@@ -13,6 +13,23 @@ export {
 } from './artcnn-port';
 
 export {
+  ARTCNN_C4F16_MODEL_PATH,
+  ORT_JSEP_MJS_PATH,
+  ORT_JSEP_WASM_PATH,
+  getArtCnnModelUrl,
+  getExtensionAssetUrl,
+  getOrtWasmPaths,
+} from './artcnn-runtime';
+
+export {
+  WebGpuArtCnnPipeline,
+  WebGpuArtCnnPipelineError,
+  createWebGpuArtCnnPipeline,
+  type WebGpuArtCnnPipelineOptions,
+  type WebGpuArtCnnPipelineStatus,
+} from './webgpu-artcnn-pipeline';
+
+export {
   WebGpuNeuralLitePipeline,
   WebGpuNeuralLitePipelineError,
   computeNeuralLiteOutputSize,

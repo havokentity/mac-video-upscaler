@@ -17,7 +17,8 @@
 - [x] Add per-site allow/block/rule storage and content-script resolution.
 - [x] Add local benchmark smoke harness with Markdown/JSON output.
 - [x] Add experimental 60/120 fps overlay frame-pacing control.
-- [ ] Port full Neural-Lite / ArtCNN shader.
+- [x] Add real Neural-Lite / ArtCNN C4F16 ONNX Runtime path with WebGPU requested and WASM fallback available.
+- [ ] Port ArtCNN C4F16/C4F32 shader-native WebGPU path for lower package size.
 - [ ] Port RAVU-Zoom and WebGPU Neural-Pro with LGPL headers and NOTICE entries.
 - [ ] Add timestamp-query GPU timing, screenshots, measured Apple Silicon benchmarks, and release notes.
 

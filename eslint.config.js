@@ -9,6 +9,7 @@ export default tseslint.config(
       'node_modules/**',
       'coverage/**',
       'playwright-report/**',
+      'public/ort/**',
       'eslint.config.js',
       'scripts/**/*.mjs',
     ],

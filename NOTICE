@@ -29,10 +29,10 @@ Planned attributions before exact shader integration:
   chain is translated to WGSL.
 - ArtCNN from Artoriuz/ArtCNN, MIT. Verified source target:
   https://github.com/Artoriuz/ArtCNN at commit b2fb535f3446060f9cb1782937f46385ea6cacc5.
+  Imported model:
+  public/models/artcnn/ArtCNN_C4F16.onnx
   Local file `src/upscaler/modes/neural-lite/artcnn-c4f16-preview.wgsl`
-  is a non-production staging shader written for this project. It contains no
-  copied ArtCNN weights; the real port must preserve upstream shader headers
-  before Neural-Lite is enabled.
+  remains a diagnostics fallback shader written for this project.
 - RAVU shader variants from bjin/mpv-prescalers, LGPL-3.0-or-later.
   Imported from https://github.com/bjin/mpv-prescalers at commit
   b3f0a59d68f33b7162051ea5970a5169558f0ea2:
