@@ -21,6 +21,8 @@ export class VideoOverlay {
   private disposed = false;
   private hudVisible = false;
   private mounted = false;
+  private overlayHost: HTMLElement | undefined;
+  private previousHostPosition: string | undefined;
   private readonly previousVideoOpacity: string;
   private renderedFps: number | undefined;
   private renderedFrameTimestamps: readonly number[] = [];
@@ -49,7 +51,8 @@ export class VideoOverlay {
     }
 
     this.mounted = true;
-    document.documentElement.append(this.canvas, this.hud);
+    this.attachOverlayHost();
+    document.documentElement.append(this.hud);
     this.syncBounds();
 
     const [globalSettings, siteRules] = await Promise.all([loadSettings(), loadSiteRules()]);
@@ -111,6 +114,9 @@ export class VideoOverlay {
 
     this.pipeline?.destroy();
     this.video.style.opacity = this.previousVideoOpacity;
+    if (this.overlayHost && this.previousHostPosition !== undefined) {
+      this.overlayHost.style.position = this.previousHostPosition;
+    }
     this.canvas.remove();
     this.hud.remove();
   }
@@ -141,6 +147,17 @@ export class VideoOverlay {
 
   private isDisposed(): boolean {
     return this.disposed;
+  }
+
+  private attachOverlayHost(): void {
+    const host = this.video.parentElement ?? document.documentElement;
+    this.overlayHost = host;
+    const hostPosition = getComputedStyle(host).position;
+    this.previousHostPosition = host.style.position;
+    if (hostPosition === 'static') {
+      host.style.position = 'relative';
+    }
+    host.append(this.canvas);
   }
 
   private renderFrame(now = performance.now()): void {
@@ -188,6 +205,7 @@ export class VideoOverlay {
 
   private syncBounds(): void {
     const rect = this.video.getBoundingClientRect();
+    const hostRect = this.overlayHost?.getBoundingClientRect();
     const width = Math.max(1, Math.round(rect.width * devicePixelRatio));
     const height = Math.max(1, Math.round(rect.height * devicePixelRatio));
 
@@ -199,8 +217,8 @@ export class VideoOverlay {
     }
 
     Object.assign(this.canvas.style, {
-      left: `${String(rect.left)}px`,
-      top: `${String(rect.top)}px`,
+      left: `${String(hostRect ? rect.left - hostRect.left : rect.left + scrollX)}px`,
+      top: `${String(hostRect ? rect.top - hostRect.top : rect.top + scrollY)}px`,
       width: `${String(rect.width)}px`,
       height: `${String(rect.height)}px`,
     });

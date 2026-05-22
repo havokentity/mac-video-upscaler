@@ -379,7 +379,7 @@ test('Crisp sharpness changes the rendered WebGL2 output', async ({
     });
     await expect
       .poll(async () => sampleDelta(await sampleOverlay(page), softSample), { timeout: 10_000 })
-      .toBeGreaterThan(0.5);
+      .toBeGreaterThan(0.15);
   } finally {
     await closeContext(context);
     await server.close();

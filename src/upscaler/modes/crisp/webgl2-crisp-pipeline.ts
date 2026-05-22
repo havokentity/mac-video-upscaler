@@ -3,7 +3,7 @@ import type { FramePipeline, PipelineStatus } from '../../pipeline';
 const MIN_SCALE = 1;
 const MAX_SCALE = 2;
 const DEFAULT_SCALE = 1.5;
-const DEFAULT_SHARPNESS = 0.55;
+const DEFAULT_SHARPNESS = 0.35;
 
 const FULLSCREEN_TRIANGLE = new Float32Array([-1, -1, 3, -1, -1, 3]);
 
@@ -184,7 +184,7 @@ float luma(vec3 color) {
 
 void main() {
   float tinySourceBoost = smoothstep(3.0, 10.0, u_scale_ratio);
-  float sampleRadius = mix(1.0, 6.0, tinySourceBoost);
+  float sampleRadius = mix(1.0, 2.25, tinySourceBoost);
   vec2 texel = u_output_texel * sampleRadius;
   vec3 b = texture(u_upscaled, v_uv - vec2(0.0, texel.y)).rgb;
   vec3 d = texture(u_upscaled, v_uv - vec2(texel.x, 0.0)).rgb;
@@ -208,29 +208,21 @@ void main() {
   vec3 hitMax = (vec3(1.0) - max(mx4, e)) / min(4.0 * mn4 - vec3(4.0), vec3(-0.0001));
   vec3 lobeRgb = max(-hitMin, hitMax);
   float userSharpness = clamp(u_sharpness, 0.0, 1.0);
-  float sharpness = mix(0.55, 1.65, userSharpness);
+  float sharpness = mix(0.45, 1.05, userSharpness);
   float baseLobe = min(max(lobeRgb.r, max(lobeRgb.g, lobeRgb.b)), 0.0);
   float lobe = max(-0.1875, baseLobe * sharpness * noise);
   float rcpL = 1.0 / (4.0 * lobe + 1.0);
   vec3 color = clamp((lobe * (b + d + h + f) + e) * rcpL, vec3(0.0), vec3(1.0));
   vec3 highPass = e - 0.25 * (b + d + f + h);
   float edgeMask = smoothstep(0.012, 0.16, rangeMax - rangeMin);
-  float detailStrength = (mix(0.35, 1.2, userSharpness) + tinySourceBoost * 0.85) * edgeMask;
-  float contrastStrength = (0.16 + tinySourceBoost * 0.32) * userSharpness;
-  vec3 guard = vec3(mix(0.04, 0.14, max(userSharpness, tinySourceBoost)));
+  float detailStrength = (mix(0.12, 0.55, userSharpness) + tinySourceBoost * 0.22) * edgeMask;
+  float contrastStrength = 0.035 * userSharpness;
+  vec3 guard = vec3(mix(0.025, 0.075, max(userSharpness, tinySourceBoost)));
   color = clamp(
     color + highPass * detailStrength + (e - vec3(0.5)) * contrastStrength * edgeMask,
     max(vec3(0.0), min(mn4, e) - guard),
     min(vec3(1.0), max(mx4, e) + guard)
   );
-  float contrastLuma = max(luma(color), 0.001);
-  float boostedLuma = clamp(0.5 + (contrastLuma - 0.5) * (1.0 + userSharpness * (0.16 + tinySourceBoost * 0.38)), 0.0, 1.0);
-  color = clamp(color * (boostedLuma / contrastLuma), vec3(0.0), vec3(1.0));
-  float globalClarity = userSharpness * (0.08 + tinySourceBoost * 0.22);
-  float globalLuma = max(luma(color), 0.001);
-  vec3 saturated = mix(vec3(globalLuma), color, 1.0 + globalClarity);
-  float globalBoostedLuma = clamp(0.5 + (globalLuma - 0.5) * (1.0 + globalClarity), 0.0, 1.0);
-  color = clamp(saturated * (globalBoostedLuma / globalLuma), vec3(0.0), vec3(1.0));
 
   out_color = vec4(color, 1.0);
 }

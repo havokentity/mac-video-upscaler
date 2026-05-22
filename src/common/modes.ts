@@ -44,7 +44,7 @@ export const DEFAULT_SETTINGS: UpscalerSettings = {
   enabled: true,
   mode: 'auto',
   scale: 1.5,
-  fsrSharpness: 0.55,
+  fsrSharpness: 0.35,
   animeSubMode: 'mode-aa',
   ravuVariant: 'auto',
   frameGenerationEnabled: false,

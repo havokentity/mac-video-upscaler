@@ -16,8 +16,8 @@ describe('WebGL2 Crisp helpers', () => {
   });
 
   it('normalizes sharpness to the RCAS-style slider range', () => {
-    expect(normalizeCrispSharpness(undefined)).toBe(0.55);
-    expect(normalizeCrispSharpness(Number.POSITIVE_INFINITY)).toBe(0.55);
+    expect(normalizeCrispSharpness(undefined)).toBe(0.35);
+    expect(normalizeCrispSharpness(Number.POSITIVE_INFINITY)).toBe(0.35);
     expect(normalizeCrispSharpness(-0.25)).toBe(0);
     expect(normalizeCrispSharpness(0.65)).toBe(0.65);
     expect(normalizeCrispSharpness(1.5)).toBe(1);
