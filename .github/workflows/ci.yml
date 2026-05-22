@@ -8,20 +8,22 @@ on:
 jobs:
   verify:
     runs-on: macos-15
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 11.2.2
 
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: pnpm
+
+      - name: Enable pnpm
+        run: |
+          corepack enable pnpm
+          corepack prepare pnpm@11.2.2 --activate
 
       - name: Install
         run: pnpm install --frozen-lockfile
