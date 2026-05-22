@@ -20,50 +20,150 @@ void main() {
 `;
 
 /*
- * Crisp WebGL2 milestone shader.
+ * FidelityFX FSR 1 inspired WebGL2 port.
  *
- * The public API is shaped for AMD FidelityFX Super Resolution 1.0: an
- * EASU-like spatial upscale pass followed by an RCAS-like sharpening pass.
- * This first WebGL2 version is an honest compact approximation, not a
- * bit-exact port of AMD's MIT-licensed FSR 1.0 shader. The exact constants and
- * full tap pattern should replace this file during the dedicated quality pass.
+ * Based on AMD FidelityFX Super Resolution 1.0 ffx_fsr1.h
+ * Copyright (c) 2021 Advanced Micro Devices, Inc. MIT licensed.
+ * Local port copyright (c) 2026 Rajesh Peter D'Monte, MIT licensed.
  */
 const EASU_APPROX_FRAGMENT_SHADER_SOURCE = `#version 300 es
 precision highp float;
 
 uniform sampler2D u_video;
 uniform vec2 u_source_texel;
+uniform vec2 u_output_size;
 
 in vec2 v_uv;
 out vec4 out_color;
 
 float luma(vec3 color) {
-  return dot(color, vec3(0.2126, 0.7152, 0.0722));
+  return color.b * 0.5 + (color.r * 0.5 + color.g);
+}
+
+vec3 sampleSource(vec2 pixel) {
+  vec2 sourceSize = 1.0 / u_source_texel;
+  vec2 clampedPixel = clamp(pixel, vec2(0.0), sourceSize - vec2(1.0));
+  return texture(u_video, (clampedPixel + vec2(0.5)) / sourceSize).rgb;
+}
+
+void easuSet(inout vec2 dir, inout float len, float weight, float lA, float lB, float lC, float lD, float lE) {
+  float dc = lD - lC;
+  float cb = lC - lB;
+  float lenXBase = max(abs(dc), abs(cb));
+  float dirX = lD - lB;
+  float lenX = clamp(abs(dirX) / max(lenXBase, 0.0001), 0.0, 1.0);
+  dir.x += dirX * weight;
+  len += lenX * lenX * weight;
+
+  float ec = lE - lC;
+  float ca = lC - lA;
+  float lenYBase = max(abs(ec), abs(ca));
+  float dirY = lE - lA;
+  float lenY = clamp(abs(dirY) / max(lenYBase, 0.0001), 0.0, 1.0);
+  dir.y += dirY * weight;
+  len += lenY * lenY * weight;
+}
+
+float easuTapWeight(vec2 off, vec2 dir, vec2 len2, float lob, float clp) {
+  vec2 v = vec2(
+    off.x * dir.x + off.y * dir.y,
+    off.x * -dir.y + off.y * dir.x
+  );
+  v *= len2;
+  float d2 = min(dot(v, v), clp);
+  float wb = 0.4 * d2 - 1.0;
+  float wa = lob * d2 - 1.0;
+  wb *= wb;
+  wa *= wa;
+  wb = 1.5625 * wb - 0.5625;
+  return wb * wa;
 }
 
 void main() {
-  vec2 texel = u_source_texel;
-  vec3 center = texture(u_video, v_uv).rgb;
-  vec3 left = texture(u_video, v_uv - vec2(texel.x, 0.0)).rgb;
-  vec3 right = texture(u_video, v_uv + vec2(texel.x, 0.0)).rgb;
-  vec3 up = texture(u_video, v_uv - vec2(0.0, texel.y)).rgb;
-  vec3 down = texture(u_video, v_uv + vec2(0.0, texel.y)).rgb;
-  vec3 diagA = texture(u_video, v_uv + vec2(texel.x, texel.y)).rgb;
-  vec3 diagB = texture(u_video, v_uv + vec2(-texel.x, texel.y)).rgb;
-  vec3 diagC = texture(u_video, v_uv + vec2(texel.x, -texel.y)).rgb;
-  vec3 diagD = texture(u_video, v_uv - vec2(texel.x, texel.y)).rgb;
+  vec2 sourceSize = 1.0 / u_source_texel;
+  vec2 pp = gl_FragCoord.xy * (sourceSize / u_output_size) +
+    (0.5 * sourceSize / u_output_size - vec2(0.5));
+  vec2 fp = floor(pp);
+  pp -= fp;
 
-  float horizontalEdge = abs(luma(left) - luma(right));
-  float verticalEdge = abs(luma(up) - luma(down));
-  float edgeWeight = clamp(abs(horizontalEdge - verticalEdge) * 5.0, 0.0, 1.0);
+  vec3 b = sampleSource(fp + vec2(0.0, -1.0));
+  vec3 c = sampleSource(fp + vec2(1.0, -1.0));
+  vec3 e = sampleSource(fp + vec2(-1.0, 0.0));
+  vec3 f = sampleSource(fp + vec2(0.0, 0.0));
+  vec3 g = sampleSource(fp + vec2(1.0, 0.0));
+  vec3 h = sampleSource(fp + vec2(2.0, 0.0));
+  vec3 i = sampleSource(fp + vec2(-1.0, 1.0));
+  vec3 j = sampleSource(fp + vec2(0.0, 1.0));
+  vec3 k = sampleSource(fp + vec2(1.0, 1.0));
+  vec3 l = sampleSource(fp + vec2(2.0, 1.0));
+  vec3 n = sampleSource(fp + vec2(0.0, 2.0));
+  vec3 o = sampleSource(fp + vec2(1.0, 2.0));
 
-  vec3 horizontalBlend = (left + center * 2.0 + right) * 0.25;
-  vec3 verticalBlend = (up + center * 2.0 + down) * 0.25;
-  vec3 diagonalBlend = (diagA + diagB + diagC + diagD + center * 4.0) * 0.125;
-  vec3 directional = horizontalEdge > verticalEdge ? verticalBlend : horizontalBlend;
-  vec3 smoothed = mix(diagonalBlend, directional, edgeWeight);
+  float bL = luma(b);
+  float cL = luma(c);
+  float eL = luma(e);
+  float fL = luma(f);
+  float gL = luma(g);
+  float hL = luma(h);
+  float iL = luma(i);
+  float jL = luma(j);
+  float kL = luma(k);
+  float lL = luma(l);
+  float nL = luma(n);
+  float oL = luma(o);
 
-  out_color = vec4(mix(center, smoothed, 0.55), 1.0);
+  vec2 dir = vec2(0.0);
+  float len = 0.0;
+  easuSet(dir, len, (1.0 - pp.x) * (1.0 - pp.y), bL, eL, fL, gL, jL);
+  easuSet(dir, len, pp.x * (1.0 - pp.y), cL, fL, gL, hL, kL);
+  easuSet(dir, len, (1.0 - pp.x) * pp.y, fL, iL, jL, kL, nL);
+  easuSet(dir, len, pp.x * pp.y, gL, jL, kL, lL, oL);
+
+  float dir2 = dot(dir, dir);
+  if (dir2 < 1.0 / 32768.0) {
+    dir = vec2(1.0, 0.0);
+  } else {
+    dir *= inversesqrt(dir2);
+  }
+
+  len *= 0.5;
+  len *= len;
+  float stretch = dot(dir, dir) / max(max(abs(dir.x), abs(dir.y)), 0.0001);
+  vec2 len2 = vec2(1.0 + (stretch - 1.0) * len, 1.0 - 0.5 * len);
+  float lob = 0.5 + ((0.25 - 0.04) - 0.5) * len;
+  float clp = 1.0 / lob;
+
+  vec3 min4 = min(min(f, g), min(j, k));
+  vec3 max4 = max(max(f, g), max(j, k));
+  vec3 color = vec3(0.0);
+  float weight = 0.0;
+
+  float wb = easuTapWeight(vec2(0.0, -1.0) - pp, dir, len2, lob, clp);
+  color += b * wb; weight += wb;
+  float wc = easuTapWeight(vec2(1.0, -1.0) - pp, dir, len2, lob, clp);
+  color += c * wc; weight += wc;
+  float wi = easuTapWeight(vec2(-1.0, 1.0) - pp, dir, len2, lob, clp);
+  color += i * wi; weight += wi;
+  float wj = easuTapWeight(vec2(0.0, 1.0) - pp, dir, len2, lob, clp);
+  color += j * wj; weight += wj;
+  float wf = easuTapWeight(vec2(0.0, 0.0) - pp, dir, len2, lob, clp);
+  color += f * wf; weight += wf;
+  float we = easuTapWeight(vec2(-1.0, 0.0) - pp, dir, len2, lob, clp);
+  color += e * we; weight += we;
+  float wk = easuTapWeight(vec2(1.0, 1.0) - pp, dir, len2, lob, clp);
+  color += k * wk; weight += wk;
+  float wl = easuTapWeight(vec2(2.0, 1.0) - pp, dir, len2, lob, clp);
+  color += l * wl; weight += wl;
+  float wh = easuTapWeight(vec2(2.0, 0.0) - pp, dir, len2, lob, clp);
+  color += h * wh; weight += wh;
+  float wg = easuTapWeight(vec2(1.0, 0.0) - pp, dir, len2, lob, clp);
+  color += g * wg; weight += wg;
+  float wo = easuTapWeight(vec2(1.0, 2.0) - pp, dir, len2, lob, clp);
+  color += o * wo; weight += wo;
+  float wn = easuTapWeight(vec2(0.0, 2.0) - pp, dir, len2, lob, clp);
+  color += n * wn; weight += wn;
+
+  out_color = vec4(clamp(color / max(weight, 0.0001), min4, max4), 1.0);
 }
 `;
 
@@ -78,26 +178,38 @@ in vec2 v_uv;
 out vec4 out_color;
 
 float luma(vec3 color) {
-  return dot(color, vec3(0.2126, 0.7152, 0.0722));
+  return color.b * 0.5 + (color.r * 0.5 + color.g);
 }
 
 void main() {
   vec2 texel = u_output_texel;
-  vec3 center = texture(u_upscaled, v_uv).rgb;
-  vec3 left = texture(u_upscaled, v_uv - vec2(texel.x, 0.0)).rgb;
-  vec3 right = texture(u_upscaled, v_uv + vec2(texel.x, 0.0)).rgb;
-  vec3 up = texture(u_upscaled, v_uv - vec2(0.0, texel.y)).rgb;
-  vec3 down = texture(u_upscaled, v_uv + vec2(0.0, texel.y)).rgb;
+  vec3 b = texture(u_upscaled, v_uv - vec2(0.0, texel.y)).rgb;
+  vec3 d = texture(u_upscaled, v_uv - vec2(texel.x, 0.0)).rgb;
+  vec3 e = texture(u_upscaled, v_uv).rgb;
+  vec3 f = texture(u_upscaled, v_uv + vec2(texel.x, 0.0)).rgb;
+  vec3 h = texture(u_upscaled, v_uv + vec2(0.0, texel.y)).rgb;
 
-  vec3 localMin = min(center, min(min(left, right), min(up, down)));
-  vec3 localMax = max(center, max(max(left, right), max(up, down)));
-  vec3 blur = (left + right + up + down) * 0.25;
-  float contrast = max(localMax.r, max(localMax.g, localMax.b)) -
-    min(localMin.r, min(localMin.g, localMin.b));
-  float adaptiveGain = u_sharpness * mix(0.85, 0.25, smoothstep(0.02, 0.35, contrast));
-  vec3 sharpened = center + (center - blur) * adaptiveGain;
+  float bL = luma(b);
+  float dL = luma(d);
+  float eL = luma(e);
+  float fL = luma(f);
+  float hL = luma(h);
+  float rangeMax = max(max(max(bL, dL), max(eL, fL)), hL);
+  float rangeMin = min(min(min(bL, dL), min(eL, fL)), hL);
+  float noise = abs(0.25 * (bL + dL + fL + hL) - eL) / max(rangeMax - rangeMin, 0.0001);
+  noise = 1.0 - 0.5 * clamp(noise, 0.0, 1.0);
 
-  out_color = vec4(clamp(sharpened, localMin, localMax), 1.0);
+  vec3 mn4 = min(min(b, d), min(f, h));
+  vec3 mx4 = max(max(b, d), max(f, h));
+  vec3 hitMin = min(mn4, e) / max(4.0 * mx4, vec3(0.0001));
+  vec3 hitMax = (vec3(1.0) - max(mx4, e)) / min(4.0 * mn4 - vec3(4.0), vec3(-0.0001));
+  vec3 lobeRgb = max(-hitMin, hitMax);
+  float sharpness = mix(0.15, 1.0, clamp(u_sharpness, 0.0, 1.0));
+  float lobe = max(-0.1875, min(max(lobeRgb.r, max(lobeRgb.g, lobeRgb.b)), 0.0)) * sharpness * noise;
+  float rcpL = 1.0 / (4.0 * lobe + 1.0);
+  vec3 color = clamp((lobe * (b + d + h + f) + e) * rcpL, vec3(0.0), vec3(1.0));
+
+  out_color = vec4(color, 1.0);
 }
 `;
 
@@ -141,6 +253,7 @@ export class WebGL2CrispPipeline implements FramePipeline {
   private readonly vertexArray: WebGLVertexArrayObject;
   private readonly vertexBuffer: WebGLBuffer;
   private readonly easuSourceTexelLocation: WebGLUniformLocation;
+  private readonly easuOutputSizeLocation: WebGLUniformLocation;
   private readonly rcasOutputTexelLocation: WebGLUniformLocation;
   private readonly rcasSharpnessLocation: WebGLUniformLocation;
 
@@ -191,6 +304,7 @@ export class WebGL2CrispPipeline implements FramePipeline {
     bindSampler(gl, this.rcasProgram, 'u_upscaled', 0);
 
     this.easuSourceTexelLocation = getUniformLocation(gl, this.easuProgram, 'u_source_texel');
+    this.easuOutputSizeLocation = getUniformLocation(gl, this.easuProgram, 'u_output_size');
     this.rcasOutputTexelLocation = getUniformLocation(gl, this.rcasProgram, 'u_output_texel');
     this.rcasSharpnessLocation = getUniformLocation(gl, this.rcasProgram, 'u_sharpness');
 
@@ -254,6 +368,7 @@ export class WebGL2CrispPipeline implements FramePipeline {
     gl.useProgram(this.easuProgram);
     gl.bindVertexArray(this.vertexArray);
     gl.uniform2f(this.easuSourceTexelLocation, 1 / sourceWidth, 1 / sourceHeight);
+    gl.uniform2f(this.easuOutputSizeLocation, output.width, output.height);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     assertNoGlError(gl, 'running the Crisp EASU-style pass');
 

@@ -25,7 +25,7 @@ pnpm dev
 | Mode | Backend | License | Notes |
 | --- | --- | --- | --- |
 | Auto | WebGPU/WebGL2 | MIT | Cheap first-frame classifier; Neural-Pro remains opt-in. |
-| Crisp | WebGPU + WebGL2 | MIT | FSR 1.0-shaped EASU/RCAS approximation with WebGPU f16/f32 and WebGL2 fallback; exact AMD constants/taps land in the quality pass. |
+| Crisp | WebGPU + WebGL2 | MIT | FSR 1.0-inspired EASU 12-tap reconstruction plus RCAS-style limiter/sharpener. WebGPU currently uses the f32 quality path while the f16 port is revalidated. |
 | Sharpen | WebGPU + WebGL2 | MIT | CAS-style 1.0x sharpen with WebGPU and WebGL2 paths. |
 | Anime | WebGPU | MIT | Anime4K-inspired Mode A and A+A milestone path; exact upstream chain remains planned. |
 | Smooth | WebGPU | Public-domain math | Lanczos/Jinc-style WebGPU upscaler; fuller EWA pass remains planned. |

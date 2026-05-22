@@ -53,8 +53,8 @@ const describeAdapter = (adapter: GPUAdapter): string => {
   return fields.length > 0 ? fields.join(' ') : 'Unknown WebGPU adapter';
 };
 
-const canUseF16 = (adapter: GPUAdapter, forceF32: boolean): boolean =>
-  !forceF32 && adapter.features.has('shader-f16');
+// Keep Crisp on the f32 quality shader while the updated EASU/RCAS f16 port is revalidated.
+const canUseF16 = (): boolean => false;
 
 export class WebGpuCrispPipeline implements FramePipeline {
   readonly status: WebGpuCrispPipelineStatus;
@@ -207,7 +207,7 @@ export class WebGpuCrispPipeline implements FramePipeline {
       throw new WebGpuCrispPipelineError('No WebGPU adapter is available.');
     }
 
-    const precision = canUseF16(adapter, options.forceF32 ?? false) ? 'f16' : 'f32';
+    const precision = canUseF16() ? 'f16' : 'f32';
     const device = await adapter.requestDevice({
       requiredFeatures: precision === 'f16' ? ['shader-f16'] : [],
     });

@@ -9,6 +9,8 @@ upstream headers and add per-file attribution here before import.
 Planned attributions before exact shader integration:
 
 - AMD FidelityFX Super Resolution 1.0 EASU + RCAS, MIT.
+  Local Crisp shaders are derived from ffx_fsr1.h, version v1.20210629:
+  https://github.com/GPUOpen-Effects/FidelityFX-FSR/blob/master/ffx-fsr/ffx_fsr1.h
 - AMD Contrast Adaptive Sharpening, MIT.
 - Anime4K v4 from bloc97/Anime4K, MIT.
 - ArtCNN from Artoriuz/ArtCNN, MIT. Verified source target:
