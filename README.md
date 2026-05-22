@@ -47,6 +47,24 @@ Crisp, Sharpen, Anime, and Neural-Lite Preview currently prefer the WebGL2 paths
 
 Experimental frame generation is a presentation pacing option: it asks the overlay to render at a 60 fps or 120 fps target instead of waiting only for decoded video frame callbacks. This is useful for responsiveness testing and display pacing, but it is not optical-flow motion interpolation yet.
 
+## Native Upscale Bench
+
+The repo also includes a macOS-native offline test tool in `native/`. This is for algorithm truth testing outside Chrome and YouTube:
+
+```sh
+cd native
+swift run -c release mac-video-upscaler-native \
+  --input /path/to/original.mp4 \
+  --output /path/to/upscaled.mp4 \
+  --mode crisp \
+  --scale 2 \
+  --sharpness 1
+```
+
+Then open `native/compare.html` in a browser and choose the original plus output videos to play them side by side with synced play, pause, seek, frame-step-ish buttons, and playback rate.
+
+The native bench currently uses AVFoundation plus a Metal-backed Core Image pipeline. It is video-only for now, by design, so visual quality can be judged without audio muxing or browser presentation noise.
+
 ## Verification Status
 
 - Generic HTML5 MP4 fixture: automated Playwright smoke test loads the unpacked extension from `dist`, mounts the overlay, and verifies nonzero canvas dimensions.
@@ -59,6 +77,7 @@ Experimental frame generation is a presentation pacing option: it asks the overl
 - DRM/CORS probe helpers classify frame access failures for clear disable messaging.
 - YouTube: automated Chromium smoke verified the overlay on `https://www.youtube.com/watch?v=jNQXAC9IVRw`.
 - Chrome stable: manual `chrome://extensions` loading is the intended verification path. Playwright-launched Chrome stable profiles did not load the unpacked extension in this environment, while Playwright Chromium did.
+- Native bench: `swift build` succeeds and a fixture MP4 can be upscaled to a valid MP4 with the native CLI.
 
 MetalFX is native-only and is not reachable from WebGPU, so this extension ships shader upscalers instead of attempting to bridge private platform APIs.
 

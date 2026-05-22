@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mac Video Upscaler Native Compare</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #0b0f14;
+        color: #eef2f7;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        background:
+          linear-gradient(180deg, rgb(255 255 255 / 4%), transparent 160px),
+          #0b0f14;
+      }
+
+      header,
+      footer {
+        padding: 14px 18px;
+        border-color: rgb(255 255 255 / 10%);
+      }
+
+      header {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid rgb(255 255 255 / 10%);
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 700;
+      }
+
+      .inputs,
+      .transport {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+      }
+
+      label {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        color: #cbd5e1;
+      }
+
+      input[type="file"] {
+        max-width: 220px;
+        color: #dbeafe;
+      }
+
+      button,
+      select {
+        border: 1px solid rgb(255 255 255 / 14%);
+        border-radius: 6px;
+        background: #172033;
+        color: #f8fafc;
+        font: inherit;
+      }
+
+      button {
+        min-width: 38px;
+        min-height: 34px;
+        cursor: pointer;
+      }
+
+      select {
+        min-height: 34px;
+        padding: 0 8px;
+      }
+
+      main {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        min-height: 0;
+      }
+
+      .pane {
+        min-width: 0;
+        display: grid;
+        grid-template-rows: auto 1fr;
+        border-right: 1px solid rgb(255 255 255 / 10%);
+      }
+
+      .pane:last-child {
+        border-right: 0;
+      }
+
+      .pane-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 14px;
+        color: #cbd5e1;
+        background: rgb(255 255 255 / 4%);
+        font-size: 13px;
+      }
+
+      .stage {
+        min-height: 0;
+        display: grid;
+        place-items: center;
+        background:
+          linear-gradient(45deg, rgb(255 255 255 / 3%) 25%, transparent 25%),
+          linear-gradient(-45deg, rgb(255 255 255 / 3%) 25%, transparent 25%),
+          #05070a;
+        background-size: 22px 22px;
+      }
+
+      video {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        background: #000;
+      }
+
+      footer {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        gap: 12px;
+        align-items: center;
+        border-top: 1px solid rgb(255 255 255 / 10%);
+      }
+
+      input[type="range"] {
+        width: 100%;
+      }
+
+      .time {
+        min-width: 112px;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+        color: #cbd5e1;
+      }
+
+      @media (max-width: 820px) {
+        main {
+          grid-template-columns: 1fr;
+        }
+
+        .pane {
+          min-height: 40vh;
+          border-right: 0;
+          border-bottom: 1px solid rgb(255 255 255 / 10%);
+        }
+
+        footer {
+          grid-template-columns: 1fr;
+        }
+
+        .time {
+          text-align: left;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Native Upscale Compare</h1>
+      <div class="inputs">
+        <label>Original <input id="leftFile" type="file" accept="video/*" /></label>
+        <label>Upscaled <input id="rightFile" type="file" accept="video/*" /></label>
+      </div>
+    </header>
+
+    <main>
+      <section class="pane">
+        <div class="pane-title">
+          <strong>Original</strong>
+          <span id="leftMeta">drop or choose a file</span>
+        </div>
+        <div class="stage">
+          <video id="left" playsinline muted></video>
+        </div>
+      </section>
+      <section class="pane">
+        <div class="pane-title">
+          <strong>Native Upscaled</strong>
+          <span id="rightMeta">drop or choose a file</span>
+        </div>
+        <div class="stage">
+          <video id="right" playsinline muted></video>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="transport">
+        <button id="play" type="button" title="Play or pause both videos">▶</button>
+        <button id="back" type="button" title="Back one frame-ish">‹</button>
+        <button id="forward" type="button" title="Forward one frame-ish">›</button>
+        <select id="rate" title="Playback rate">
+          <option value="0.25">0.25x</option>
+          <option value="0.5">0.5x</option>
+          <option value="1" selected>1x</option>
+          <option value="2">2x</option>
+        </select>
+      </div>
+      <input id="scrub" type="range" min="0" max="1" step="0.001" value="0" />
+      <div id="time" class="time">0.00 / 0.00</div>
+    </footer>
+
+    <script type="module">
+      const left = document.querySelector('#left');
+      const right = document.querySelector('#right');
+      const leftFile = document.querySelector('#leftFile');
+      const rightFile = document.querySelector('#rightFile');
+      const leftMeta = document.querySelector('#leftMeta');
+      const rightMeta = document.querySelector('#rightMeta');
+      const play = document.querySelector('#play');
+      const back = document.querySelector('#back');
+      const forward = document.querySelector('#forward');
+      const rate = document.querySelector('#rate');
+      const scrub = document.querySelector('#scrub');
+      const time = document.querySelector('#time');
+      let syncing = false;
+
+      const setFile = (video, meta, file) => {
+        if (!file) return;
+        video.src = URL.createObjectURL(file);
+        video.load();
+        meta.textContent = file.name;
+      };
+
+      const syncTime = (source, target) => {
+        if (syncing || !Number.isFinite(source.currentTime)) return;
+        if (Math.abs(target.currentTime - source.currentTime) < 0.04) return;
+        syncing = true;
+        target.currentTime = source.currentTime;
+        syncing = false;
+      };
+
+      const updateHud = () => {
+        const duration = Math.max(left.duration || 0, right.duration || 0);
+        const current = Math.max(left.currentTime || 0, right.currentTime || 0);
+        scrub.max = String(Math.max(0.001, duration));
+        scrub.value = String(Math.min(duration, current));
+        time.textContent = `${current.toFixed(2)} / ${duration.toFixed(2)}`;
+        play.textContent = left.paused && right.paused ? '▶' : 'Ⅱ';
+        requestAnimationFrame(updateHud);
+      };
+
+      leftFile.addEventListener('change', () => setFile(left, leftMeta, leftFile.files?.[0]));
+      rightFile.addEventListener('change', () => setFile(right, rightMeta, rightFile.files?.[0]));
+
+      for (const video of [left, right]) {
+        video.addEventListener('timeupdate', () => syncTime(video, video === left ? right : left));
+        video.addEventListener('seeked', () => syncTime(video, video === left ? right : left));
+        video.addEventListener('loadedmetadata', () => {
+          video.playbackRate = Number(rate.value);
+        });
+      }
+
+      play.addEventListener('click', async () => {
+        if (left.paused && right.paused) {
+          left.currentTime = right.currentTime = Math.max(left.currentTime, right.currentTime);
+          await Promise.allSettled([left.play(), right.play()]);
+        } else {
+          left.pause();
+          right.pause();
+        }
+      });
+
+      back.addEventListener('click', () => {
+        const next = Math.max(0, Math.max(left.currentTime, right.currentTime) - 1 / 30);
+        left.currentTime = next;
+        right.currentTime = next;
+      });
+
+      forward.addEventListener('click', () => {
+        const next = Math.max(left.currentTime, right.currentTime) + 1 / 30;
+        left.currentTime = next;
+        right.currentTime = next;
+      });
+
+      rate.addEventListener('change', () => {
+        left.playbackRate = Number(rate.value);
+        right.playbackRate = Number(rate.value);
+      });
+
+      scrub.addEventListener('input', () => {
+        const next = Number(scrub.value);
+        left.currentTime = next;
+        right.currentTime = next;
+      });
+
+      document.body.addEventListener('dragover', (event) => {
+        event.preventDefault();
+      });
+
+      document.body.addEventListener('drop', (event) => {
+        event.preventDefault();
+        const files = [...(event.dataTransfer?.files ?? [])].filter((file) => file.type.startsWith('video/'));
+        setFile(left, leftMeta, files[0]);
+        setFile(right, rightMeta, files[1]);
+      });
+
+      updateHud();
+    </script>
+  </body>
+</html>

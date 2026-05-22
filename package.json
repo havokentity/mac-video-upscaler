@@ -23,6 +23,8 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "validate:wgsl": "node scripts/validate-wgsl-metal.mjs",
+    "native:build": "swift build -c release --package-path native",
+    "native:sample": "swift run -c release --package-path native mac-video-upscaler-native --input tests/fixtures/sample-video.mp4 --output /tmp/mac-video-upscaler-native-sample.mp4 --mode crisp --scale 2 --sharpness 1",
     "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm validate:wgsl && pnpm build"
   },
   "dependencies": {
