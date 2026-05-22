@@ -5,6 +5,8 @@ import { mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+import { DEFAULT_SETTINGS, type UpscalerSettings } from '../../src/common/modes';
+
 interface StaticServer {
   readonly origin: string;
   close(): Promise<void>;
@@ -73,6 +75,58 @@ const closeContext = async (context: BrowserContext | undefined): Promise<void> 
   }
 };
 
+const createExtensionContext = async (workerIndex: number): Promise<BrowserContext> => {
+  const profileDir = path.join(tmpdir(), `mac-video-upscaler-e2e-${String(workerIndex)}`);
+  await mkdir(profileDir, { recursive: true });
+
+  return chromium.launchPersistentContext(profileDir, {
+    channel: 'chromium',
+    headless: true,
+    args: [
+      `--disable-extensions-except=${extensionPath}`,
+      `--load-extension=${extensionPath}`,
+      '--autoplay-policy=no-user-gesture-required',
+    ],
+  });
+};
+
+const writeExtensionSettings = async (
+  context: BrowserContext,
+  settings: UpscalerSettings,
+): Promise<void> => {
+  const worker =
+    context.serviceWorkers()[0] ??
+    (await context.waitForEvent('serviceworker', { timeout: 10_000 }));
+
+  await worker.evaluate((nextSettings) => {
+    return new Promise<void>((resolve, reject) => {
+      chrome.storage.sync.set({ settings: nextSettings }, () => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+          return;
+        }
+
+        resolve();
+      });
+    });
+  }, settings);
+
+  const storedSettings = await worker.evaluate(() => {
+    return new Promise<UpscalerSettings>((resolve, reject) => {
+      chrome.storage.sync.get('settings', (result) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+          return;
+        }
+
+        resolve(result.settings as UpscalerSettings);
+      });
+    });
+  });
+
+  expect(storedSettings.mode).toBe(settings.mode);
+};
+
 test('built extension mounts an overlay canvas on a local MP4 video', async ({ browserName }, testInfo) => {
   test.skip(browserName !== 'chromium', 'Chrome extensions can only be loaded in Chromium.');
 
@@ -85,18 +139,7 @@ test('built extension mounts an overlay canvas on a local MP4 video', async ({ b
   let context: BrowserContext | undefined;
 
   try {
-    const profileDir = path.join(tmpdir(), `mac-video-upscaler-e2e-${String(testInfo.workerIndex)}`);
-    await mkdir(profileDir, { recursive: true });
-
-    context = await chromium.launchPersistentContext(profileDir, {
-      channel: 'chromium',
-      headless: true,
-      args: [
-        `--disable-extensions-except=${extensionPath}`,
-        `--load-extension=${extensionPath}`,
-        '--autoplay-policy=no-user-gesture-required',
-      ],
-    });
+    context = await createExtensionContext(testInfo.workerIndex);
 
     const page = context.pages()[0] ?? (await context.newPage());
     await page.goto(server.origin, { waitUntil: 'domcontentloaded' });
@@ -126,6 +169,60 @@ test('built extension mounts an overlay canvas on a local MP4 video', async ({ b
     await page.keyboard.press('Control+Shift+U');
     const hud = page.locator('.mac-video-upscaler-hud');
     await expect(hud).toHaveCount(1);
+  } finally {
+    await closeContext(context);
+    await server.close();
+  }
+});
+
+test('Crisp mode uses the WebGL2 1.5x upscaler on a local MP4 video', async ({
+  browserName,
+}, testInfo) => {
+  test.skip(browserName !== 'chromium', 'Chrome extensions can only be loaded in Chromium.');
+
+  expect(
+    existsSync(path.join(extensionPath, 'manifest.json')),
+    'Run `pnpm build` before `pnpm test:e2e`; this test loads the unpacked extension from dist.',
+  ).toBe(true);
+
+  const server = await startStaticServer(fixturesPath);
+  let context: BrowserContext | undefined;
+
+  try {
+    context = await createExtensionContext(testInfo.workerIndex + 100);
+    await writeExtensionSettings(context, {
+      ...DEFAULT_SETTINGS,
+      mode: 'crisp',
+      fsrSharpness: 0.65,
+      forceWebGL2: true,
+    });
+
+    const page = context.pages()[0] ?? (await context.newPage());
+    await page.goto(server.origin, { waitUntil: 'domcontentloaded' });
+
+    const overlay = page.locator('.mac-video-upscaler-overlay');
+    await expect(overlay).toHaveCount(1, { timeout: 10_000 });
+
+    await page.keyboard.press('Control+Shift+U');
+    await expect(page.locator('.mac-video-upscaler-hud')).toContainText('webgl2 crisp');
+
+    const dimensions = await overlay.evaluate((canvas) => {
+      const rect = canvas.getBoundingClientRect();
+      const video = document.querySelector<HTMLVideoElement>('#sample-video');
+      return {
+        cssWidth: rect.width,
+        cssHeight: rect.height,
+        canvasWidth: (canvas as HTMLCanvasElement).width,
+        canvasHeight: (canvas as HTMLCanvasElement).height,
+        sourceWidth: video?.videoWidth ?? 0,
+        sourceHeight: video?.videoHeight ?? 0,
+      };
+    });
+
+    expect(dimensions.cssWidth).toBe(320);
+    expect(dimensions.cssHeight).toBe(180);
+    expect(dimensions.canvasWidth).toBe(Math.round(dimensions.sourceWidth * 1.5));
+    expect(dimensions.canvasHeight).toBe(Math.round(dimensions.sourceHeight * 1.5));
   } finally {
     await closeContext(context);
     await server.close();

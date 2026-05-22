@@ -119,10 +119,11 @@ export class VideoOverlay {
     const width = Math.max(1, Math.round(rect.width * devicePixelRatio));
     const height = Math.max(1, Math.round(rect.height * devicePixelRatio));
 
-    if (this.canvas.width !== width || this.canvas.height !== height) {
+    if (this.pipeline) {
+      this.pipeline.resize(width, height);
+    } else if (this.canvas.width !== width || this.canvas.height !== height) {
       this.canvas.width = width;
       this.canvas.height = height;
-      this.pipeline?.resize(width, height);
     }
 
     Object.assign(this.canvas.style, {
@@ -140,8 +141,12 @@ export class VideoOverlay {
 
   private renderHud(): void {
     const status = this.pipeline?.status;
-    this.hud.textContent = status
-      ? `Mac Video Upscaler: ${status.backend}${status.reason ? ` - ${status.reason}` : ''}`
-      : 'Mac Video Upscaler: initializing';
+    if (!status) {
+      this.hud.textContent = 'Mac Video Upscaler: initializing';
+      return;
+    }
+
+    const label = status.mode ? `${status.backend} ${status.mode}` : status.backend;
+    this.hud.textContent = `Mac Video Upscaler: ${label}${status.reason ? ` - ${status.reason}` : ''}`;
   }
 }

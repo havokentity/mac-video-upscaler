@@ -1,4 +1,5 @@
 import type { UpscalerSettings } from '../common/modes';
+import { createWebGL2CrispPipeline } from './modes/crisp';
 import { createWebGL2CopyPipeline } from './webgl2';
 import { WebGpuVideoCopyPipeline } from './webgpu';
 
@@ -6,6 +7,7 @@ export type UpscalerBackend = 'webgpu' | 'webgl2' | 'disabled';
 
 export interface PipelineStatus {
   backend: UpscalerBackend;
+  mode?: string;
   reason?: string;
 }
 
@@ -47,6 +49,20 @@ export const createPipeline = async (
 
   let webgpuFailure: string | undefined;
 
+  if (settings.mode === 'crisp') {
+    try {
+      const pipeline = createWebGL2CrispPipeline(canvas, video, {
+        scale: 1.5,
+        sharpness: settings.fsrSharpness,
+      });
+      pipeline.status.reason = `FSR 1.0-style WebGL2 upscale active at 1.5x; sharpness ${settings.fsrSharpness.toFixed(2)}.`;
+      return pipeline;
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'Unknown WebGL2 Crisp error.';
+      return new DisabledPipeline(reason);
+    }
+  }
+
   if ('gpu' in navigator && navigator.gpu && !settings.forceWebGL2) {
     try {
       const pipeline = await WebGpuVideoCopyPipeline.create({
@@ -54,6 +70,7 @@ export const createPipeline = async (
         video,
         presentationFormat: navigator.gpu.getPreferredCanvasFormat(),
       });
+      pipeline.status.mode = 'copy';
       pipeline.status.reason = '1:1 copy active.';
       return pipeline;
     } catch (error) {
@@ -63,6 +80,7 @@ export const createPipeline = async (
 
   try {
     const pipeline = createWebGL2CopyPipeline(canvas, video);
+    pipeline.status.mode = 'copy';
     pipeline.status.reason = webgpuFailure
       ? `1:1 copy fallback active; WebGPU unavailable: ${webgpuFailure}`
       : '1:1 copy fallback active.';

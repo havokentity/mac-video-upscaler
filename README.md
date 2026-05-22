@@ -2,7 +2,7 @@
 
 Metal-tuned GPU video upscaling for Chrome on macOS. The project targets Manifest V3, WebGPU through Dawn/Tint/Metal, and a WebGL2 fallback for the fast modes.
 
-This repository is being built in ordered milestones. The current build mounts a video overlay and performs a 1:1 frame copy through WebGPU, with WebGL2 as the fallback copy path. Shader upscalers land in later steps.
+This repository is being built in ordered milestones. The current build mounts a video overlay, performs a 1:1 frame copy through WebGPU or WebGL2, and includes the first WebGL2 Crisp mode at fixed 1.5x with popup-controlled sharpness.
 
 ## Install for Development
 
@@ -25,7 +25,7 @@ pnpm dev
 | Mode | Backend | License | Notes |
 | --- | --- | --- | --- |
 | Auto | WebGPU/WebGL2 | MIT | Cheap first-frame classifier; Neural-Pro remains opt-in. |
-| Crisp | WebGPU + WebGL2 | MIT | FSR 1.0 EASU + RCAS. |
+| Crisp | WebGPU + WebGL2 | MIT | WebGL2 milestone has an FSR 1.0-shaped EASU/RCAS approximation; exact AMD constants/taps land in the quality pass. |
 | Sharpen | WebGPU + WebGL2 | MIT | CAS at 1.0x. |
 | Anime | WebGPU | MIT | Anime4K v4 Mode A and A+A. |
 | Smooth | WebGPU | Public-domain math | EWA Lanczos / Jinc-windowed Jinc. |
@@ -41,6 +41,7 @@ WebGPU is preferred on macOS Chrome 121+; WebGL2 is retained as a fallback for C
 ## Verification Status
 
 - Generic HTML5 MP4 fixture: automated Playwright smoke test loads the unpacked extension from `dist`, mounts the overlay, and verifies nonzero canvas dimensions.
+- WebGL2 Crisp: automated Playwright smoke test writes extension settings, activates Crisp, verifies HUD mode text, and checks 1.5x backing resolution.
 - YouTube: automated Chromium smoke verified the overlay on `https://www.youtube.com/watch?v=jNQXAC9IVRw`.
 - Chrome stable: manual `chrome://extensions` loading is the intended verification path. Playwright-launched Chrome stable profiles did not load the unpacked extension in this environment, while Playwright Chromium did.
 
