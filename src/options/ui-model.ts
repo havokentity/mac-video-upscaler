@@ -13,7 +13,7 @@ export const MODE_LABELS: Record<UpscalerMode, string> = {
   crt: 'CRT',
   invert: 'Inverted Colors',
   cartoon: 'Cartoon Rotoscope',
-  'neural-lite': 'Neural-Lite (coming soon)',
+  'neural-lite': 'Neural-Lite Preview',
   'neural-pro': 'Neural-Pro (coming soon)',
 };
 
@@ -30,7 +30,7 @@ export const MODE_DESCRIPTIONS: Record<UpscalerMode, string> = {
   crt: 'Experimental CRT scanline, vignette, and color-fringe WebGL2 filter.',
   invert: 'Experimental inverted color WebGL2 filter.',
   cartoon: 'Experimental toon-shader rotoscope WebGL2 filter.',
-  'neural-lite': 'ArtCNN is reserved for the neural-lite milestone.',
+  'neural-lite': 'Small residual enhancement preview; ArtCNN weights remain the target port.',
   'neural-pro': 'RAVU is reserved for the LGPL neural-pro milestone.',
 };
 
@@ -47,6 +47,7 @@ const IMPLEMENTED_MODES = new Set<UpscalerMode>([
   'crt',
   'invert',
   'cartoon',
+  'neural-lite',
 ]);
 
 export interface ModeControlState {
@@ -68,6 +69,7 @@ export const getModeControlState = (mode: UpscalerMode): ModeControlState => {
   const isSharpen = mode === 'sharpen';
   const isSmooth = mode === 'smooth';
   const isAnime = mode === 'anime';
+  const isNeuralLite = mode === 'neural-lite';
   const isFunFilter =
     mode === 'edge' ||
     mode === 'night-vision' ||
@@ -91,7 +93,9 @@ export const getModeControlState = (mode: UpscalerMode): ModeControlState => {
         ? 'Sharpen renders at 1.0x and ignores scale.'
         : isAnime
           ? 'Anime uses WebGL2 first and keeps the Anime4K sub-mode control.'
-        : isSmooth
+          : isNeuralLite
+            ? 'Neural-Lite preview uses WebGL2 first; ArtCNN weight port is still pending.'
+          : isSmooth
           ? 'Smooth is WebGPU-only.'
           : isFunFilter
             ? 'Experimental filter rendered with WebGL2.'

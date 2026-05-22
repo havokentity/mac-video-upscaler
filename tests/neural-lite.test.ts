@@ -54,7 +54,19 @@ describe('Neural-Lite ArtCNN skeleton', () => {
     ).toEqual({ height: 720, width: 1280 });
   });
 
-  it('creates a disabled FramePipeline-compatible placeholder', async () => {
+  it('keeps display backing size when the page stretches tiny video', () => {
+    expect(
+      computeNeuralLiteOutputSize({
+        requestedHeight: 2160,
+        requestedWidth: 3840,
+        scale: 1.5,
+        sourceHeight: 144,
+        sourceWidth: 256,
+      }),
+    ).toEqual({ height: 2160, width: 3840 });
+  });
+
+  it('keeps the WebGPU ArtCNN port placeholder disabled until weights land', async () => {
     const canvas = {
       height: 360,
       width: 640,

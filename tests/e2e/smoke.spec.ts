@@ -500,6 +500,48 @@ test('Anime changes the rendered WebGL2 output on a paused frame', async ({
   }
 });
 
+test('Neural-Lite preview changes the rendered WebGL2 output on a paused frame', async ({
+  browserName,
+}, testInfo) => {
+  test.skip(browserName !== 'chromium', 'Chrome extensions can only be loaded in Chromium.');
+
+  expect(
+    existsSync(path.join(extensionPath, 'manifest.json')),
+    'Run `pnpm build` before `pnpm test:e2e`; this test loads the unpacked extension from dist.',
+  ).toBe(true);
+
+  const server = await startStaticServer(fixturesPath);
+  let context: BrowserContext | undefined;
+
+  try {
+    context = await createExtensionContext(testInfo.workerIndex + 155);
+    await writeExtensionSettings(context, {
+      ...DEFAULT_SETTINGS,
+      forceWebGL2: true,
+      hudEnabled: true,
+      mode: 'neural-lite',
+      scale: 2,
+    });
+
+    const page = context.pages()[0] ?? (await context.newPage());
+    await page.goto(server.origin, { waitUntil: 'domcontentloaded' });
+    await expect(page.locator('.mac-video-upscaler-overlay')).toHaveCount(1, { timeout: 10_000 });
+    await pauseOnStillFrame(page);
+    await expect(page.locator('#sample-video')).toHaveCSS('opacity', '0', { timeout: 10_000 });
+    await expect(page.locator('.mac-video-upscaler-hud').last()).toContainText(
+      'webgl2 neural-lite',
+    );
+    const nativeSample = await sampleVideo(page);
+
+    await expect
+      .poll(async () => sampleDelta(await sampleOverlay(page), nativeSample), { timeout: 10_000 })
+      .toBeGreaterThan(0.15);
+  } finally {
+    await closeContext(context);
+    await server.close();
+  }
+});
+
 test('enabled setting rebuilds the active overlay without a page refresh', async ({
   browserName,
 }, testInfo) => {

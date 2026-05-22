@@ -21,7 +21,7 @@ const MODE_LABELS: Record<UpscalerMode, string> = {
   crt: 'CRT',
   invert: 'Inverted Colors',
   cartoon: 'Cartoon Rotoscope',
-  'neural-lite': 'Neural-Lite (coming soon)',
+  'neural-lite': 'Neural-Lite Preview',
   'neural-pro': 'Neural-Pro (coming soon)',
 };
 
@@ -38,7 +38,7 @@ const MODE_NOTES: Record<UpscalerMode, string> = {
   crt: 'Experimental CRT scanlines, vignette, and color-fringe styling.',
   invert: 'Experimental inverted color filter.',
   cartoon: 'Experimental toon-shader rotoscope look with posterized colors and inked edges.',
-  'neural-lite': 'ArtCNN integration is reserved for the next neural milestone.',
+  'neural-lite': 'Small residual enhancement preview; ArtCNN weights remain the target port.',
   'neural-pro': 'RAVU integration is reserved for the LGPL shader milestone.',
 };
 
@@ -55,6 +55,7 @@ const IMPLEMENTED_MODES = new Set<UpscalerMode>([
   'crt',
   'invert',
   'cartoon',
+  'neural-lite',
 ]);
 
 const getRequiredElement = (selector: string): HTMLElement => {
@@ -121,6 +122,7 @@ const updateModeControls = (): void => {
   const isCrispLike = selectedMode === 'auto' || selectedMode === 'crisp';
   const isSmooth = selectedMode === 'smooth';
   const isAnime = selectedMode === 'anime';
+  const isNeuralLite = selectedMode === 'neural-lite';
   const isNone = selectedMode === 'none';
   const isFunFilter =
     selectedMode === 'edge' ||
@@ -151,7 +153,9 @@ const updateModeControls = (): void => {
           ? 'Crisp uses the visually verified WebGL2 path first, with WebGPU fallback.'
         : isAnime
           ? 'Anime uses the visually verified WebGL2 path first, with WebGPU fallback.'
-          : isFunFilter
+        : isNeuralLite
+          ? 'Neural-Lite preview uses WebGL2 first; ArtCNN weight port is still pending.'
+        : isFunFilter
             ? 'Experimental filter rendered with WebGL2.'
             : 'Smooth requires WebGPU.'
     : 'This mode is visible for roadmap clarity and will unlock when its shader port lands.';

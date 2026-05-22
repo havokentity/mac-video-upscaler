@@ -25,3 +25,11 @@ export {
   type WebGpuNeuralLitePipelineOptions,
   type WebGpuNeuralLitePipelineStatus,
 } from './webgpu-neural-lite-pipeline';
+
+export {
+  WebGL2NeuralLitePipeline,
+  WebGL2NeuralLitePipelineError,
+  createWebGL2NeuralLitePipeline,
+  type WebGL2NeuralLitePipelineOptions,
+  type WebGL2NeuralLitePipelineStatus,
+} from './webgl2-neural-lite-pipeline';

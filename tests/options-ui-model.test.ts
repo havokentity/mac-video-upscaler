@@ -25,7 +25,7 @@ describe('options UI model', () => {
     expect(isImplementedMode('crt')).toBe(true);
     expect(isImplementedMode('invert')).toBe(true);
     expect(isImplementedMode('cartoon')).toBe(true);
-    expect(isImplementedMode('neural-lite')).toBe(false);
+    expect(isImplementedMode('neural-lite')).toBe(true);
     expect(isImplementedMode('neural-pro')).toBe(false);
     expect(MODE_LABELS['neural-pro']).toContain('coming soon');
   });
@@ -63,6 +63,11 @@ describe('options UI model', () => {
       scaleVisible: true,
       sharpnessVisible: false,
       supportNote: 'Experimental filter rendered with WebGL2.',
+    });
+    expect(getModeControlState('neural-lite')).toMatchObject({
+      implemented: true,
+      scaleVisible: true,
+      supportNote: 'Neural-Lite preview uses WebGL2 first; ArtCNN weight port is still pending.',
     });
   });
 

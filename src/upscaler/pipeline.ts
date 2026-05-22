@@ -3,7 +3,7 @@ import { classifyVideoFrame } from './auto/classifier';
 import { createWebGL2AnimePipeline, WebGpuAnimePipeline } from './modes/anime';
 import { createWebGL2CrispPipeline, WebGpuCrispPipeline } from './modes/crisp';
 import { createWebGL2FunPipeline, type FunFilterMode } from './modes/fun';
-import { createWebGpuNeuralLitePipeline } from './modes/neural-lite';
+import { createWebGL2NeuralLitePipeline, createWebGpuNeuralLitePipeline } from './modes/neural-lite';
 import { createWebGpuNeuralProPipeline } from './modes/neural-pro';
 import { createWebGL2SharpenPipeline, WebGpuSharpenPipeline } from './modes/sharpen';
 import { WebGpuSmoothPipeline } from './modes/smooth';
@@ -94,6 +94,17 @@ export const createPipeline = async (
       : `Auto -> ${autoClassification.mode}${mode !== autoClassification.mode ? ` (using ${mode} until ${autoClassification.mode} lands)` : ''}; `;
 
   if (requestedMode === 'neural-lite') {
+    try {
+      return createWebGL2NeuralLitePipeline(canvas, video, {
+        scale: settings.scale,
+      });
+    } catch (error) {
+      if (settings.forceWebGL2) {
+        const reason = getErrorMessage(error, 'Unknown WebGL2 Neural-Lite error.');
+        return new DisabledPipeline(`WebGL2 Neural-Lite failed: ${reason}`, 'neural-lite');
+      }
+    }
+
     return createWebGpuNeuralLitePipeline({
       canvas,
       scale: settings.scale,

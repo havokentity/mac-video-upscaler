@@ -170,8 +170,8 @@ export const computeNeuralLiteOutputSize = ({
   const heightBasis = sourceHeight > 0 ? sourceHeight : requestedHeight;
 
   return {
-    height: Math.max(1, Math.round(heightBasis * normalizedScale)),
-    width: Math.max(1, Math.round(widthBasis * normalizedScale)),
+    height: Math.max(1, requestedHeight, Math.round(heightBasis * normalizedScale)),
+    width: Math.max(1, requestedWidth, Math.round(widthBasis * normalizedScale)),
   };
 };
 
