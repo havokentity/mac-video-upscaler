@@ -9,7 +9,7 @@ const SOURCE_TEXTURE_FORMAT: GPUTextureFormat = 'rgba8unorm';
 
 export interface WebGpuSmoothPipelineStatus extends PipelineStatus {
   backend: 'webgpu';
-  mode: 'smooth';
+  mode: string;
   adapterName: string;
   canvasWidth: number;
   canvasHeight: number;
