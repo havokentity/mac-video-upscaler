@@ -14,10 +14,23 @@ import { WebGpuSmoothPipeline } from './modes/smooth';
 
 export type UpscalerBackend = 'webgpu' | 'webgl2' | 'disabled';
 
+export type PipelineGpuTimingPhase = 'unsupported' | 'unavailable' | 'measuring' | 'ready' | 'disjoint';
+
+export interface PipelineGpuTimingStatus {
+  backend: Extract<UpscalerBackend, 'webgpu' | 'webgl2'>;
+  supported: boolean;
+  status: PipelineGpuTimingPhase;
+  reason?: string;
+  lastFrameMs?: number;
+  averageFrameMs?: number;
+  sampleCount?: number;
+}
+
 export interface PipelineStatus {
   backend: UpscalerBackend;
   mode?: string;
   reason?: string;
+  gpuTiming?: PipelineGpuTimingStatus;
 }
 
 export interface FramePipeline {

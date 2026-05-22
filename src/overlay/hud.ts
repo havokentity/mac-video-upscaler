@@ -1,4 +1,4 @@
-import type { PipelineStatus } from '../upscaler/pipeline';
+import type { PipelineGpuTimingStatus, PipelineStatus } from '../upscaler/pipeline';
 
 const DEFAULT_FPS_WINDOW_MS = 1000;
 
@@ -80,6 +80,30 @@ export const formatRenderedFps = (fps: number | undefined): string => {
   return `${fps.toFixed(1)} fps`;
 };
 
+export const formatGpuTiming = (timing: PipelineGpuTimingStatus | undefined): string | undefined => {
+  if (!timing) {
+    return undefined;
+  }
+
+  if (timing.status === 'ready' && timing.averageFrameMs !== undefined) {
+    return `${timing.backend} ${timing.averageFrameMs.toFixed(2)} ms avg`;
+  }
+
+  if (timing.status === 'measuring') {
+    return `${timing.backend} measuring`;
+  }
+
+  if (timing.status === 'disjoint') {
+    return `${timing.backend} clock reset; measuring`;
+  }
+
+  if (timing.reason && timing.reason.length > 0) {
+    return `${timing.backend} ${timing.status} (${timing.reason})`;
+  }
+
+  return `${timing.backend} ${timing.status}`;
+};
+
 export const sampleRenderedFps = (
   previousTimestamps: readonly number[],
   now: number,
@@ -122,6 +146,11 @@ export const buildHudRows = (
     { label: 'Resolution', value: formatSourceOutputResolution(status) },
     { label: 'Rendered', value: formatRenderedFps(metrics.renderedFps) },
   ];
+  const gpuTiming = formatGpuTiming(status.gpuTiming);
+
+  if (gpuTiming !== undefined) {
+    rows.push({ label: 'GPU', value: gpuTiming });
+  }
 
   if (detailValues.length > 0) {
     rows.push({ label: 'Details', value: detailValues.join(' / ') });

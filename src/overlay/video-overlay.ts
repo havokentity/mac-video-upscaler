@@ -2,7 +2,7 @@ import { resolveSiteSettings } from '../common/site-rules';
 import { loadSettings, loadSiteRules } from '../common/storage';
 import { detectSite, shouldBypassVideo } from '../common/site';
 import { classifyFrameAccessError } from '../content/frame-access-probe';
-import { createPipeline, type FramePipeline } from '../upscaler/pipeline';
+import { createPipeline, type FramePipeline, type PipelineGpuTimingStatus } from '../upscaler/pipeline';
 import { buildHudRows, sampleRenderedFps } from './hud';
 
 const OVERLAY_CLASS = 'chrome-video-upscaler-overlay';
@@ -10,6 +10,128 @@ const HUD_CLASS = 'chrome-video-upscaler-hud';
 const PRESENTATION_PROBE_SIZE = 24;
 const PRESENTATION_PROBE_FRAME_DELAY = 3;
 const PRESENTATION_PROBE_MAX_ATTEMPTS = 8;
+const WEBGL2_TIMER_QUERY_EXTENSION = 'EXT_disjoint_timer_query_webgl2';
+const GPU_TIMER_MAX_PENDING_QUERIES = 4;
+const GPU_TIMER_SAMPLE_WINDOW = 30;
+const WEBGPU_TIMESTAMP_QUERY_CONSTRAINT =
+  'timestamp-query must be requested when creating each GPUDevice; per-mode wiring pending';
+
+type WebGl2TimerQueryExtension = {
+  readonly TIME_ELAPSED_EXT: GLenum;
+  readonly GPU_DISJOINT_EXT: GLenum;
+};
+
+class WebGl2GpuTimer {
+  readonly status: PipelineGpuTimingStatus = {
+    backend: 'webgl2',
+    supported: true,
+    status: 'measuring',
+  };
+
+  private readonly pendingQueries: WebGLQuery[] = [];
+  private readonly samplesMs: number[] = [];
+
+  private constructor(
+    private readonly gl: WebGL2RenderingContext,
+    private readonly extension: WebGl2TimerQueryExtension,
+  ) {}
+
+  static create(canvas: HTMLCanvasElement): WebGl2GpuTimer | undefined {
+    const gl = canvas.getContext('webgl2');
+    const extension = gl?.getExtension(WEBGL2_TIMER_QUERY_EXTENSION) as
+      | WebGl2TimerQueryExtension
+      | null
+      | undefined;
+
+    return gl && extension ? new WebGl2GpuTimer(gl, extension) : undefined;
+  }
+
+  measure(render: () => void): void {
+    this.poll();
+
+    if (this.pendingQueries.length >= GPU_TIMER_MAX_PENDING_QUERIES) {
+      render();
+      return;
+    }
+
+    if (this.gl.isContextLost()) {
+      render();
+      return;
+    }
+
+    const query = this.gl.createQuery();
+
+    this.gl.beginQuery(this.extension.TIME_ELAPSED_EXT, query);
+    try {
+      render();
+    } finally {
+      this.gl.endQuery(this.extension.TIME_ELAPSED_EXT);
+      this.pendingQueries.push(query);
+    }
+  }
+
+  destroy(): void {
+    this.pendingQueries.splice(0).forEach((query) => {
+      this.gl.deleteQuery(query);
+    });
+  }
+
+  private poll(): void {
+    if (this.gl.getParameter(this.extension.GPU_DISJOINT_EXT) === true) {
+      this.pendingQueries.splice(0).forEach((query) => {
+        this.gl.deleteQuery(query);
+      });
+      this.samplesMs.length = 0;
+      Object.assign(this.status, {
+        averageFrameMs: undefined,
+        lastFrameMs: undefined,
+        reason: 'GPU clock disjoint; waiting for stable samples.',
+        sampleCount: 0,
+        status: 'disjoint',
+      });
+      return;
+    }
+
+    while (this.pendingQueries.length > 0) {
+      const query = this.pendingQueries[0];
+      const available = this.gl.getQueryParameter(query, this.gl.QUERY_RESULT_AVAILABLE) as
+        | boolean
+        | undefined;
+
+      if (!available) {
+        break;
+      }
+
+      this.pendingQueries.shift();
+      const elapsedNs = this.gl.getQueryParameter(query, this.gl.QUERY_RESULT) as number | undefined;
+      this.gl.deleteQuery(query);
+
+      if (elapsedNs === undefined || !Number.isFinite(elapsedNs)) {
+        continue;
+      }
+
+      const elapsedMs = elapsedNs / 1_000_000;
+      this.samplesMs.push(elapsedMs);
+      if (this.samplesMs.length > GPU_TIMER_SAMPLE_WINDOW) {
+        this.samplesMs.shift();
+      }
+    }
+
+    if (this.samplesMs.length === 0) {
+      this.status.status = 'measuring';
+      return;
+    }
+
+    const totalMs = this.samplesMs.reduce((total, sample) => total + sample, 0);
+    Object.assign(this.status, {
+      averageFrameMs: totalMs / this.samplesMs.length,
+      lastFrameMs: this.samplesMs[this.samplesMs.length - 1],
+      reason: undefined,
+      sampleCount: this.samplesMs.length,
+      status: 'ready',
+    });
+  }
+}
 
 export class VideoOverlay {
   readonly canvas: HTMLCanvasElement;
@@ -35,6 +157,7 @@ export class VideoOverlay {
   private frameGenerationEnabled = false;
   private frameGenerationTargetFps = 60;
   private nextGeneratedFrameAt = 0;
+  private gpuTimer: WebGl2GpuTimer | undefined;
 
   constructor(private readonly video: HTMLVideoElement) {
     this.canvas = document.createElement('canvas');
@@ -66,6 +189,7 @@ export class VideoOverlay {
     const siteResolution = resolveSiteSettings(globalSettings, siteRules, location.hostname);
     const settings = siteResolution.settings;
     this.pipeline = await createPipeline(this.canvas, this.video, settings);
+    this.configureGpuTimingStatus();
     this.shouldHideNativeVideo = settings.enabled && this.pipeline.status.backend !== 'disabled';
     this.frameGenerationEnabled =
       settings.frameGenerationEnabled && this.pipeline.status.backend !== 'disabled';
@@ -115,6 +239,7 @@ export class VideoOverlay {
       cancelAnimationFrame(this.animationFrameHandle);
     }
 
+    this.gpuTimer?.destroy();
     this.pipeline?.destroy();
     this.video.style.opacity = this.previousVideoOpacity;
     this.video.style.zIndex = this.previousVideoZIndex;
@@ -187,7 +312,7 @@ export class VideoOverlay {
 
     try {
       this.syncBounds();
-      this.pipeline?.renderFrame();
+      this.renderPipelineFrame();
       this.recordRenderedFrame();
       this.schedulePresentationProbe();
       if (this.presentationReady && this.shouldHideNativeVideo) {
@@ -253,6 +378,51 @@ export class VideoOverlay {
     });
 
     this.hud.replaceChildren(title, ...rows);
+  }
+
+  private configureGpuTimingStatus(): void {
+    const status = this.pipeline?.status;
+    this.gpuTimer?.destroy();
+    this.gpuTimer = undefined;
+
+    if (!status || status.backend === 'disabled') {
+      return;
+    }
+
+    if (status.backend === 'webgl2') {
+      this.gpuTimer = WebGl2GpuTimer.create(this.canvas);
+      status.gpuTiming =
+        this.gpuTimer?.status ?? {
+          backend: 'webgl2',
+          reason: `${WEBGL2_TIMER_QUERY_EXTENSION} unavailable`,
+          status: 'unsupported',
+          supported: false,
+        };
+      return;
+    }
+
+    status.gpuTiming = {
+      backend: 'webgpu',
+      reason: WEBGPU_TIMESTAMP_QUERY_CONSTRAINT,
+      status: 'unavailable',
+      supported: false,
+    };
+  }
+
+  private renderPipelineFrame(): void {
+    const pipeline = this.pipeline;
+    if (!pipeline) {
+      return;
+    }
+
+    if (this.gpuTimer && pipeline.status.backend === 'webgl2') {
+      this.gpuTimer.measure(() => {
+        pipeline.renderFrame();
+      });
+      return;
+    }
+
+    pipeline.renderFrame();
   }
 
   private recordRenderedFrame(): void {
