@@ -279,7 +279,7 @@ export class VideoOverlay {
 
   private probeCanvasPresentation(): void {
     try {
-      const presentationLooksUsable = canvasHasVisiblePixels(this.canvas);
+      const presentationLooksUsable = canvasHasPresentedPixels(this.canvas);
       this.presentationProbeAttempts += 1;
 
       if (this.disposed) {
@@ -335,7 +335,7 @@ export class VideoOverlay {
   }
 }
 
-export const canvasHasVisiblePixels = (canvas: HTMLCanvasElement): boolean => {
+export const canvasHasPresentedPixels = (canvas: HTMLCanvasElement): boolean => {
   if (canvas.width <= 0 || canvas.height <= 0) {
     return false;
   }
@@ -355,8 +355,8 @@ export const canvasHasVisiblePixels = (canvas: HTMLCanvasElement): boolean => {
   } catch {
     return false;
   }
-  let maxLuma = 0;
   let alphaPixels = 0;
+  const minimumAlphaPixels = Math.max(1, Math.floor((PRESENTATION_PROBE_SIZE * PRESENTATION_PROBE_SIZE) * 0.05));
 
   for (let index = 0; index < pixels.length; index += 4) {
     const alpha = pixels[index + 3];
@@ -365,9 +365,10 @@ export const canvasHasVisiblePixels = (canvas: HTMLCanvasElement): boolean => {
     }
 
     alphaPixels += 1;
-    const luma = pixels[index] * 0.2126 + pixels[index + 1] * 0.7152 + pixels[index + 2] * 0.0722;
-    maxLuma = Math.max(maxLuma, luma);
+    if (alphaPixels >= minimumAlphaPixels) {
+      return true;
+    }
   }
 
-  return alphaPixels > 0 && maxLuma > 6;
+  return false;
 };
