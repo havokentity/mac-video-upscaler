@@ -135,5 +135,5 @@ Avoid screenshots from DRM streaming services or pages where the source video li
 - Do not claim support for Netflix, Disney+, HBO Max, Prime Video, or other DRM/EME playback.
 - Do not claim RTX VSR parity, optical-flow interpolation, driver-level processing, or native OS-wide video enhancement.
 - Do not claim Neural-Lite is always GPU-fast; the current ONNX Runtime path can fall back and may be slow.
-- Do not claim ArtCNN shader-native runtime is complete; only scaffold/parser work exists.
+- Do not claim ArtCNN shader-native runtime is complete; generated pass artifacts and CPU/reference checks exist, but runtime wiring remains disabled.
 - Do not claim WebGPU RAVU is complete; current RAVU-Lite/RAVU-Zoom runtime path is WebGL2.

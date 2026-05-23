@@ -3,6 +3,8 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 interface ArtCnnPassMetadata {
+  readonly activation: string;
+  readonly index: number;
   readonly localSize: readonly [number, number, number];
   readonly outputStep: readonly [number, number];
   readonly counts: {
@@ -11,8 +13,16 @@ interface ArtCnnPassMetadata {
   readonly constantsByResult: readonly {
     readonly result: string;
     readonly bias: readonly number[];
-    readonly terms: readonly unknown[];
+    readonly terms: readonly ArtCnnTermMetadata[];
   }[];
+}
+
+interface ArtCnnTermMetadata {
+  readonly input: string;
+  readonly operator: 'M4' | 'V4';
+  readonly plane: number;
+  readonly tile: readonly [number, number];
+  readonly values: readonly number[];
 }
 
 interface ArtCnnMetadataArtifact {
@@ -33,6 +43,15 @@ interface ArtCnnMetadataArtifact {
 
 interface ArtCnnReportModule {
   readonly buildMetadataArtifact: (report: unknown) => ArtCnnMetadataArtifact;
+  readonly evaluateArtCnnConvolutionPassCpu: (
+    pass: ArtCnnPassMetadata,
+    inputValues: Record<string, readonly number[]>,
+  ) => number[][];
+  readonly evaluateArtCnnDepthToSpaceCpu: (
+    sourceSample: readonly number[],
+    subpixel: readonly [number, number],
+  ) => number[];
+  readonly generateWgslPassExecutable: (artifactOrReport: unknown, passIndex: number) => string;
   readonly generateWgslPassOneExecutable: (artifactOrReport: unknown) => string;
   readonly generateWgslPassTwoExecutable: (artifactOrReport: unknown) => string;
   readonly generateWgslSkeleton: (report: unknown) => string;
@@ -61,6 +80,9 @@ const passOnePath = join(
 const passTwoPath = join(
   process.cwd(),
   'src/upscaler/modes/neural-lite/artcnn-c4f16-native-pass2.wgsl',
+);
+const passPaths = Array.from({ length: 8 }, (_, index) =>
+  join(process.cwd(), `src/upscaler/modes/neural-lite/artcnn-c4f16-native-pass${String(index + 1)}.wgsl`),
 );
 const upstreamIt = existsSync(upstreamSource) ? it : it.skip;
 
@@ -163,6 +185,19 @@ describe('ArtCNN shader-native parser and generator', () => {
     expect(passTwo).toBe(generateWgslPassTwoExecutable(artifact));
   });
 
+  upstreamIt('keeps all generated executable pass slices aligned to upstream constants', async () => {
+    const {
+      buildMetadataArtifact,
+      generateWgslPassExecutable,
+      parseArtCnnShaderSourceFile,
+    } = await loadReportModule();
+    const artifact = buildMetadataArtifact(parseArtCnnShaderSourceFile(upstreamSource));
+
+    for (const [index, passPath] of passPaths.entries()) {
+      expect(readFileSync(passPath, 'utf8')).toBe(generateWgslPassExecutable(artifact, index + 1));
+    }
+  });
+
   it('ships stable parser artifacts even when upstream checkout is absent', () => {
     const checkedIn = JSON.parse(readFileSync(metadataPath, 'utf8')) as ArtCnnMetadataArtifact;
     const skeleton = readFileSync(skeletonPath, 'utf8');
@@ -215,4 +250,58 @@ describe('ArtCNN shader-native parser and generator', () => {
     expect(passTwo).toContain('artcnn_store_pass2(output_base + vec2u(1, 1), result3);');
     expect(passTwo).not.toContain('TODO');
   });
+
+  it('generates checked-in executable WGSL for every ArtCNN pass from checked-in metadata', async () => {
+    const { generateWgslPassExecutable } = await loadReportModule();
+    const checkedIn = JSON.parse(readFileSync(metadataPath, 'utf8')) as ArtCnnMetadataArtifact;
+
+    for (const [index, passPath] of passPaths.entries()) {
+      const passNumber = index + 1;
+      const passSource = readFileSync(passPath, 'utf8');
+      expect(passSource).toBe(generateWgslPassExecutable(checkedIn, passNumber));
+      expect(passSource).toContain(`fn artcnn_c4f16_pass_${String(passNumber).padStart(2, '0')}`);
+      expect(passSource).not.toContain('TODO');
+    }
+    expect(readFileSync(passPaths[6], 'utf8')).toContain('@group(0) @binding(0) var artcnn_residual: texture_2d<f32>;');
+    expect(readFileSync(passPaths[7], 'utf8')).toContain('let channel = subpixel.y * 2u + subpixel.x;');
+  });
+
+  it('evaluates generated convolution passes with a deterministic CPU reference', async () => {
+    const { evaluateArtCnnConvolutionPassCpu } = await loadReportModule();
+    const checkedIn = JSON.parse(readFileSync(metadataPath, 'utf8')) as ArtCnnMetadataArtifact;
+
+    for (const pass of checkedIn.passes.slice(0, 7)) {
+      const inputValues = createDeterministicInputs(pass);
+      const outputs = evaluateArtCnnConvolutionPassCpu(pass, inputValues);
+      expect(outputs).toHaveLength(pass.constantsByResult.length);
+      expect(outputs.every((output) => output.length === 4)).toBe(true);
+      expect(outputs.flat().every(Number.isFinite)).toBe(true);
+      if (pass.activation === 'relu') {
+        expect(outputs.flat().every((value) => value >= 0)).toBe(true);
+      }
+    }
+  });
+
+  it('evaluates depth-to-space with a CPU reference', async () => {
+    const { evaluateArtCnnDepthToSpaceCpu } = await loadReportModule();
+
+    expect(evaluateArtCnnDepthToSpaceCpu([-0.4, 0.25, 0.75, 1.7], [0, 0])).toEqual([0, 0, 0, 1]);
+    expect(evaluateArtCnnDepthToSpaceCpu([-0.4, 0.25, 0.75, 1.7], [1, 0])).toEqual([0.25, 0, 0, 1]);
+    expect(evaluateArtCnnDepthToSpaceCpu([-0.4, 0.25, 0.75, 1.7], [0, 1])).toEqual([0.75, 0, 0, 1]);
+    expect(evaluateArtCnnDepthToSpaceCpu([-0.4, 0.25, 0.75, 1.7], [1, 1])).toEqual([1, 0, 0, 1]);
+  });
 });
+
+const createDeterministicInputs = (pass: ArtCnnPassMetadata): Record<string, readonly number[]> => {
+  const inputs: Record<string, readonly number[]> = {};
+  for (const result of pass.constantsByResult) {
+    for (const term of result.terms) {
+      const seed = term.plane * 13 + term.tile[0] * 5 + term.tile[1] * 7 + pass.index;
+      inputs[term.input] =
+        term.operator === 'V4'
+          ? [seed / 31]
+          : [seed / 31, (seed + 1) / 37, (seed + 2) / 41, (seed + 3) / 43];
+    }
+  }
+  return inputs;
+};

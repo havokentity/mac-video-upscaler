@@ -27,6 +27,7 @@ export interface ArtCnnPortPlan {
   readonly localPreviewShader: string;
   readonly nativePassOneShader: string;
   readonly nativePassTwoShader: string;
+  readonly nativePassShaders: readonly string[];
   readonly nativeSkeletonShader: string;
   readonly enabled: false;
   readonly reason: string;
@@ -42,6 +43,10 @@ export const ARTCNN_C4F16_PORT_PLAN: ArtCnnPortPlan = {
   localPreviewShader: 'src/upscaler/modes/neural-lite/artcnn-c4f16-preview.wgsl',
   nativePassOneShader: 'src/upscaler/modes/neural-lite/artcnn-c4f16-native-pass1.wgsl',
   nativePassTwoShader: 'src/upscaler/modes/neural-lite/artcnn-c4f16-native-pass2.wgsl',
+  nativePassShaders: Array.from(
+    { length: 8 },
+    (_, index) => `src/upscaler/modes/neural-lite/artcnn-c4f16-native-pass${String(index + 1)}.wgsl`,
+  ),
   nativeSkeletonShader: 'src/upscaler/modes/neural-lite/artcnn-c4f16-native-skeleton.wgsl',
   reason:
     'ArtCNN_C4F16 needs a faithful multi-stage WGSL port of the upstream fused mpv Conv2D hooks and weights before it can be enabled.',

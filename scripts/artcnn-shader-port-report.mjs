@@ -7,7 +7,7 @@ import { basename, resolve } from 'node:path';
 
 const DEFAULT_SOURCE = '/tmp/ArtCNN/GLSL/ArtCNN_C4F16.glsl';
 
-const usage = `Usage: node scripts/artcnn-shader-port-report.mjs [source.glsl] [--json] [--emit-json out.json] [--emit-wgsl out.wgsl] [--emit-pass1-wgsl out.wgsl] [--emit-pass2-wgsl out.wgsl]
+const usage = `Usage: node scripts/artcnn-shader-port-report.mjs [source.glsl] [--json] [--emit-json out.json] [--emit-wgsl out.wgsl] [--emit-pass1-wgsl out.wgsl] ... [--emit-pass8-wgsl out.wgsl]
 
 Parses ArtCNN mpv GLSL hook metadata and emits a compact porting report.
 Default source: ${DEFAULT_SOURCE}
@@ -28,8 +28,10 @@ export function runCli(args) {
   const sourcePath = resolve(sourceArg);
   const emitJsonPath = getOptionValue(args, '--emit-json');
   const emitWgslPath = getOptionValue(args, '--emit-wgsl');
-  const emitPassOneWgslPath = getOptionValue(args, '--emit-pass1-wgsl');
-  const emitPassTwoWgslPath = getOptionValue(args, '--emit-pass2-wgsl');
+  const emitPassWgslPaths = Array.from({ length: 8 }, (_, index) => ({
+    passIndex: index + 1,
+    path: getOptionValue(args, `--emit-pass${index + 1}-wgsl`),
+  })).filter((entry) => entry.path);
 
   if (!existsSync(sourcePath)) {
     process.stderr.write(
@@ -47,11 +49,9 @@ export function runCli(args) {
   if (emitWgslPath) {
     writeFileSync(resolve(emitWgslPath), generateWgslSkeleton(report));
   }
-  if (emitPassOneWgslPath) {
-    writeFileSync(resolve(emitPassOneWgslPath), generateWgslPassOneExecutable(buildMetadataArtifact(report)));
-  }
-  if (emitPassTwoWgslPath) {
-    writeFileSync(resolve(emitPassTwoWgslPath), generateWgslPassTwoExecutable(buildMetadataArtifact(report)));
+  const artifact = buildMetadataArtifact(report);
+  for (const entry of emitPassWgslPaths) {
+    writeFileSync(resolve(entry.path), generateWgslPassExecutable(artifact, entry.passIndex));
   }
 
   if (json) {
@@ -393,27 +393,38 @@ export function generateWgslPassOneExecutable(artifactOrReport) {
 }
 
 export function generateWgslPassTwoExecutable(artifactOrReport) {
+  return generateWgslMatrixConvolutionPassExecutable(artifactOrReport, 2);
+}
+
+export function generateWgslPassThreeExecutable(artifactOrReport) {
+  return generateWgslMatrixConvolutionPassExecutable(artifactOrReport, 3);
+}
+
+export function generateWgslPassFourExecutable(artifactOrReport) {
+  return generateWgslMatrixConvolutionPassExecutable(artifactOrReport, 4);
+}
+
+export function generateWgslPassFiveExecutable(artifactOrReport) {
+  return generateWgslMatrixConvolutionPassExecutable(artifactOrReport, 5);
+}
+
+export function generateWgslPassSixExecutable(artifactOrReport) {
+  return generateWgslMatrixConvolutionPassExecutable(artifactOrReport, 6);
+}
+
+export function generateWgslPassSevenExecutable(artifactOrReport) {
+  return generateWgslMatrixConvolutionPassExecutable(artifactOrReport, 7);
+}
+
+export function generateWgslPassEightExecutable(artifactOrReport) {
   const artifact = isMetadataArtifact(artifactOrReport) ? artifactOrReport : buildMetadataArtifact(artifactOrReport);
-  const pass = artifact.passes[1];
+  const pass = artifact.passes[7];
 
   if (!pass) {
-    throw new Error('ArtCNN pass 2 metadata is missing.');
+    throw new Error('ArtCNN pass 8 metadata is missing.');
   }
-  if (pass.index !== 2 || pass.outputStep.join('x') !== '2x2' || pass.inputStep?.join('x') !== '2x2') {
-    throw new Error('ArtCNN pass 2 generator expects the Conv2D-1 2x2 input/output pass.');
-  }
-  if (pass.constantsByResult.length !== 4 || pass.activation !== 'relu') {
-    throw new Error('ArtCNN pass 2 generator expects four ReLU result vectors.');
-  }
-  for (const result of pass.constantsByResult) {
-    if (result.bias.length !== 4 || result.terms.length !== 36) {
-      throw new Error(`ArtCNN pass 2 ${result.result} has an unexpected 4-plane 3x3 matrix convolution shape.`);
-    }
-    for (const term of result.terms) {
-      if (term.operator !== 'M4' || term.plane < 0 || term.plane > 3 || term.values.length !== 16) {
-        throw new Error(`ArtCNN pass 2 ${result.result} includes an unsupported term shape.`);
-      }
-    }
+  if (pass.index !== 8 || pass.activation !== 'clamp' || pass.constantsByResult.length !== 0) {
+    throw new Error('ArtCNN pass 8 generator expects the constant-free depth-to-space pass.');
   }
 
   const [workgroupX, workgroupY, workgroupZ] = pass.localSize ?? [12, 16, 1];
@@ -421,13 +432,10 @@ export function generateWgslPassTwoExecutable(artifactOrReport) {
     'enable f16;',
     '',
     '/*',
-    ' * Generated executable ArtCNN C4F16 pass 2 slice.',
+    ' * Generated executable ArtCNN C4F16 pass 8 depth-to-space slice.',
     ' * Source: ArtCNN_C4F16.glsl from Artoriuz/ArtCNN, MIT licensed.',
     ` * Source SHA-256: ${artifact.source.sha256}`,
-    ' *',
-    ' * This file is not runtime-wired yet. It covers the next upstream',
-    ' * M4 * vec4 convolution shape after pass 1 and stays as a reviewable',
-    ' * artifact until the remaining passes and CPU reference checks land.',
+    ' * Runtime wiring remains disabled until full CPU/reference validation lands.',
     ' */',
     '',
     'struct ArtCnnNativeParams {',
@@ -439,7 +447,131 @@ export function generateWgslPassTwoExecutable(artifactOrReport) {
     '@group(0) @binding(1) var artcnn_out: texture_storage_2d<rgba16float, write>;',
     '@group(0) @binding(2) var<uniform> artcnn_params: ArtCnnNativeParams;',
     '',
-    'fn artcnn_load_pass2(base: vec2u, plane: u32, tile: vec2i) -> vec4<f16> {',
+    `@compute @workgroup_size(${workgroupX}, ${workgroupY}, ${workgroupZ})`,
+    'fn artcnn_c4f16_pass_08(@builtin(global_invocation_id) global_id: vec3u) {',
+    '  if (global_id.x >= artcnn_params.output_size.x || global_id.y >= artcnn_params.output_size.y) {',
+    '    return;',
+    '  }',
+    '  let source_coord = global_id.xy / vec2u(2, 2);',
+    '  let subpixel = global_id.xy % vec2u(2, 2);',
+    '  let channel = subpixel.y * 2u + subpixel.x;',
+    '  let source_sample = textureLoad(artcnn_in, source_coord, 0);',
+    '  let luma = clamp(source_sample[channel], 0.0, 1.0);',
+    '  textureStore(artcnn_out, global_id.xy, vec4f(luma, 0.0, 0.0, 1.0));',
+    '}',
+  ];
+
+  return `${lines.join('\n')}\n`;
+}
+
+export function generateWgslPassExecutable(artifactOrReport, passIndex) {
+  if (passIndex === 1) {
+    return generateWgslPassOneExecutable(artifactOrReport);
+  }
+  if (passIndex >= 2 && passIndex <= 7) {
+    return generateWgslMatrixConvolutionPassExecutable(artifactOrReport, passIndex);
+  }
+  if (passIndex === 8) {
+    return generateWgslPassEightExecutable(artifactOrReport);
+  }
+
+  throw new Error(`Unsupported ArtCNN pass index: ${String(passIndex)}.`);
+}
+
+export function evaluateArtCnnConvolutionPassCpu(pass, inputValues) {
+  const results = [];
+  for (const result of pass.constantsByResult) {
+    const output = [...result.bias];
+    for (const term of result.terms) {
+      const input = inputValues[term.input];
+      if (!input) {
+        throw new Error(`Missing CPU reference input ${term.input}.`);
+      }
+      if (term.operator === 'V4') {
+        for (let channel = 0; channel < 4; channel += 1) {
+          output[channel] += term.values[channel] * input[0];
+        }
+      } else if (term.operator === 'M4') {
+        const product = multiplyColumnMajorMat4Vec4(term.values, input);
+        for (let channel = 0; channel < 4; channel += 1) {
+          output[channel] += product[channel];
+        }
+      } else {
+        throw new Error(`Unsupported CPU reference operator ${term.operator}.`);
+      }
+    }
+    results.push(pass.activation === 'relu' ? output.map((value) => Math.max(value, 0)) : output);
+  }
+  return results;
+}
+
+export function evaluateArtCnnDepthToSpaceCpu(sourceSample, subpixel) {
+  const channel = subpixel[1] * 2 + subpixel[0];
+  return [Math.min(Math.max(sourceSample[channel], 0), 1), 0, 0, 1];
+}
+
+function generateWgslMatrixConvolutionPassExecutable(artifactOrReport, passIndex) {
+  const artifact = isMetadataArtifact(artifactOrReport) ? artifactOrReport : buildMetadataArtifact(artifactOrReport);
+  const pass = artifact.passes[passIndex - 1];
+
+  if (!pass) {
+    throw new Error(`ArtCNN pass ${String(passIndex)} metadata is missing.`);
+  }
+  const isResidualPass = passIndex === 7;
+  const expectedResults = isResidualPass ? 1 : 4;
+  const expectedOutputStep = isResidualPass ? '1x1' : '2x2';
+  if (pass.index !== passIndex || pass.outputStep.join('x') !== expectedOutputStep || pass.inputStep?.join('x') !== '2x2') {
+    throw new Error(`ArtCNN pass ${String(passIndex)} generator received an unexpected pass shape.`);
+  }
+  if (pass.constantsByResult.length !== expectedResults) {
+    throw new Error(`ArtCNN pass ${String(passIndex)} generator received an unexpected result count.`);
+  }
+  for (const result of pass.constantsByResult) {
+    if (result.bias.length !== 4 || result.terms.length !== 36) {
+      throw new Error(`ArtCNN pass ${String(passIndex)} ${result.result} has an unexpected 4-plane 3x3 matrix convolution shape.`);
+    }
+    for (const term of result.terms) {
+      if (term.operator !== 'M4' || term.plane < 0 || term.plane > 3 || term.values.length !== 16) {
+        throw new Error(`ArtCNN pass ${String(passIndex)} ${result.result} includes an unsupported term shape.`);
+      }
+    }
+  }
+
+  const [workgroupX, workgroupY, workgroupZ] = pass.localSize ?? [12, 16, 1];
+  const passLabel = String(passIndex);
+  const passId = String(passIndex).padStart(2, '0');
+  const inputBindings = isResidualPass
+    ? [
+        '@group(0) @binding(0) var artcnn_residual: texture_2d<f32>;',
+        '@group(0) @binding(1) var artcnn_in: texture_2d<f32>;',
+        '@group(0) @binding(2) var artcnn_out: texture_storage_2d<rgba16float, write>;',
+        '@group(0) @binding(3) var<uniform> artcnn_params: ArtCnnNativeParams;',
+      ]
+    : [
+        '@group(0) @binding(0) var artcnn_in: texture_2d<f32>;',
+        '@group(0) @binding(1) var artcnn_out: texture_storage_2d<rgba16float, write>;',
+        '@group(0) @binding(2) var<uniform> artcnn_params: ArtCnnNativeParams;',
+      ];
+  const lines = [
+    'enable f16;',
+    '',
+    '/*',
+    ` * Generated executable ArtCNN C4F16 pass ${passLabel} slice.`,
+    ' * Source: ArtCNN_C4F16.glsl from Artoriuz/ArtCNN, MIT licensed.',
+    ` * Source SHA-256: ${artifact.source.sha256}`,
+    ' *',
+    ' * This file is not runtime-wired yet. It is a faithful generated',
+    ' * M4 * vec4 convolution artifact used for review and CPU reference checks.',
+    ' */',
+    '',
+    'struct ArtCnnNativeParams {',
+    '  source_size: vec2u,',
+    '  output_size: vec2u,',
+    '};',
+    '',
+    ...inputBindings,
+    '',
+    `fn artcnn_load_pass${passLabel}(base: vec2u, plane: u32, tile: vec2i) -> vec4<f16> {`,
     '  let plane_offset = select(',
     '    select(vec2i(0, 1), vec2i(1, 1), plane == 3u),',
     '    select(vec2i(0, 0), vec2i(1, 0), plane == 1u),',
@@ -448,19 +580,21 @@ export function generateWgslPassTwoExecutable(artifactOrReport) {
     '  let source_base = (vec2i(base) + tile - vec2i(1, 1)) * vec2i(2, 2) + plane_offset;',
     '  let max_coord = vec2i(artcnn_params.source_size) - vec2i(1, 1);',
     '  let coord = clamp(source_base, vec2i(0, 0), max_coord);',
-    '  return vec4<f16>(textureLoad(artcnn_in, coord, 0));',
+    isResidualPass
+      ? '  return vec4<f16>(textureLoad(artcnn_in, coord, 0) + textureLoad(artcnn_residual, coord, 0));'
+      : '  return vec4<f16>(textureLoad(artcnn_in, coord, 0));',
     '}',
     '',
-    'fn artcnn_store_pass2(pixel: vec2u, value: vec4<f16>) {',
+    `fn artcnn_store_pass${passLabel}(pixel: vec2u, value: vec4<f16>) {`,
     '  if (pixel.x < artcnn_params.output_size.x && pixel.y < artcnn_params.output_size.y) {',
     '    textureStore(artcnn_out, pixel, vec4f(value));',
     '  }',
     '}',
     '',
     `@compute @workgroup_size(${workgroupX}, ${workgroupY}, ${workgroupZ})`,
-    'fn artcnn_c4f16_pass_02(@builtin(global_invocation_id) global_id: vec3u) {',
+    `fn artcnn_c4f16_pass_${passId}(@builtin(global_invocation_id) global_id: vec3u) {`,
     '  let base = global_id.xy;',
-    '  let output_base = global_id.xy * vec2u(2, 2);',
+    isResidualPass ? '  let output_base = global_id.xy;' : '  let output_base = global_id.xy * vec2u(2, 2);',
     '',
   ];
 
@@ -472,7 +606,7 @@ export function generateWgslPassTwoExecutable(artifactOrReport) {
   }
   for (const term of [...termsByInput.values()].sort(compareTerms)) {
     lines.push(
-      `  let ${term.input} = artcnn_load_pass2(base, ${term.plane}u, vec2i(${term.tile[0]}, ${term.tile[1]}));`,
+      `  let ${term.input} = artcnn_load_pass${passLabel}(base, ${term.plane}u, vec2i(${term.tile[0]}, ${term.tile[1]}));`,
     );
   }
   lines.push('');
@@ -482,16 +616,23 @@ export function generateWgslPassTwoExecutable(artifactOrReport) {
     for (const term of result.terms) {
       lines.push(`  ${result.result} += ${formatWgslF16Mat4(term.values)} * ${term.input};`);
     }
-    lines.push(`  ${result.result} = max(${result.result}, vec4<f16>(f16(0)));`, '');
+    if (pass.activation === 'relu') {
+      lines.push(`  ${result.result} = max(${result.result}, vec4<f16>(f16(0)));`);
+    }
+    lines.push('');
   }
 
-  lines.push(
-    '  artcnn_store_pass2(output_base + vec2u(0, 0), result0);',
-    '  artcnn_store_pass2(output_base + vec2u(1, 0), result1);',
-    '  artcnn_store_pass2(output_base + vec2u(0, 1), result2);',
-    '  artcnn_store_pass2(output_base + vec2u(1, 1), result3);',
-    '}',
-  );
+  if (isResidualPass) {
+    lines.push(`  artcnn_store_pass${passLabel}(output_base, result0);`, '}');
+  } else {
+    lines.push(
+      `  artcnn_store_pass${passLabel}(output_base + vec2u(0, 0), result0);`,
+      `  artcnn_store_pass${passLabel}(output_base + vec2u(1, 0), result1);`,
+      `  artcnn_store_pass${passLabel}(output_base + vec2u(0, 1), result2);`,
+      `  artcnn_store_pass${passLabel}(output_base + vec2u(1, 1), result3);`,
+      '}',
+    );
+  }
 
   return `${lines.join('\n')}\n`;
 }
@@ -608,6 +749,16 @@ function formatWgslF16Mat4(values) {
   return `mat4x4<f16>(${values.map((value) => `f16(${formatNumber(value)})`).join(', ')})`;
 }
 
+function multiplyColumnMajorMat4Vec4(matrix, vector) {
+  if (matrix.length !== 16 || vector.length !== 4) {
+    throw new Error('CPU reference mat4 * vec4 expects 16 matrix values and 4 vector values.');
+  }
+
+  return Array.from({ length: 4 }, (_, row) =>
+    vector.reduce((total, value, column) => total + matrix[column * 4 + row] * value, 0),
+  );
+}
+
 function formatNumber(value) {
   if (!Number.isFinite(value)) {
     throw new Error(`Cannot emit non-finite WGSL number: ${value}`);
@@ -656,8 +807,7 @@ function isOptionValue(args, index) {
   return (
     previous === '--emit-json' ||
     previous === '--emit-wgsl' ||
-    previous === '--emit-pass1-wgsl' ||
-    previous === '--emit-pass2-wgsl'
+    /^--emit-pass[1-8]-wgsl$/.test(previous ?? '')
   );
 }
 
