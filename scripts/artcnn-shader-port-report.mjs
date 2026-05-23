@@ -7,7 +7,7 @@ import { basename, resolve } from 'node:path';
 
 const DEFAULT_SOURCE = '/tmp/ArtCNN/GLSL/ArtCNN_C4F16.glsl';
 
-const usage = `Usage: node scripts/artcnn-shader-port-report.mjs [source.glsl] [--json] [--emit-json out.json] [--emit-wgsl out.wgsl] [--emit-pass1-wgsl out.wgsl]
+const usage = `Usage: node scripts/artcnn-shader-port-report.mjs [source.glsl] [--json] [--emit-json out.json] [--emit-wgsl out.wgsl] [--emit-pass1-wgsl out.wgsl] [--emit-pass2-wgsl out.wgsl]
 
 Parses ArtCNN mpv GLSL hook metadata and emits a compact porting report.
 Default source: ${DEFAULT_SOURCE}
@@ -29,6 +29,7 @@ export function runCli(args) {
   const emitJsonPath = getOptionValue(args, '--emit-json');
   const emitWgslPath = getOptionValue(args, '--emit-wgsl');
   const emitPassOneWgslPath = getOptionValue(args, '--emit-pass1-wgsl');
+  const emitPassTwoWgslPath = getOptionValue(args, '--emit-pass2-wgsl');
 
   if (!existsSync(sourcePath)) {
     process.stderr.write(
@@ -48,6 +49,9 @@ export function runCli(args) {
   }
   if (emitPassOneWgslPath) {
     writeFileSync(resolve(emitPassOneWgslPath), generateWgslPassOneExecutable(buildMetadataArtifact(report)));
+  }
+  if (emitPassTwoWgslPath) {
+    writeFileSync(resolve(emitPassTwoWgslPath), generateWgslPassTwoExecutable(buildMetadataArtifact(report)));
   }
 
   if (json) {
@@ -388,6 +392,110 @@ export function generateWgslPassOneExecutable(artifactOrReport) {
   return `${lines.join('\n')}\n`;
 }
 
+export function generateWgslPassTwoExecutable(artifactOrReport) {
+  const artifact = isMetadataArtifact(artifactOrReport) ? artifactOrReport : buildMetadataArtifact(artifactOrReport);
+  const pass = artifact.passes[1];
+
+  if (!pass) {
+    throw new Error('ArtCNN pass 2 metadata is missing.');
+  }
+  if (pass.index !== 2 || pass.outputStep.join('x') !== '2x2' || pass.inputStep?.join('x') !== '2x2') {
+    throw new Error('ArtCNN pass 2 generator expects the Conv2D-1 2x2 input/output pass.');
+  }
+  if (pass.constantsByResult.length !== 4 || pass.activation !== 'relu') {
+    throw new Error('ArtCNN pass 2 generator expects four ReLU result vectors.');
+  }
+  for (const result of pass.constantsByResult) {
+    if (result.bias.length !== 4 || result.terms.length !== 36) {
+      throw new Error(`ArtCNN pass 2 ${result.result} has an unexpected 4-plane 3x3 matrix convolution shape.`);
+    }
+    for (const term of result.terms) {
+      if (term.operator !== 'M4' || term.plane < 0 || term.plane > 3 || term.values.length !== 16) {
+        throw new Error(`ArtCNN pass 2 ${result.result} includes an unsupported term shape.`);
+      }
+    }
+  }
+
+  const [workgroupX, workgroupY, workgroupZ] = pass.localSize ?? [12, 16, 1];
+  const lines = [
+    'enable f16;',
+    '',
+    '/*',
+    ' * Generated executable ArtCNN C4F16 pass 2 slice.',
+    ' * Source: ArtCNN_C4F16.glsl from Artoriuz/ArtCNN, MIT licensed.',
+    ` * Source SHA-256: ${artifact.source.sha256}`,
+    ' *',
+    ' * This file is not runtime-wired yet. It covers the next upstream',
+    ' * M4 * vec4 convolution shape after pass 1 and stays as a reviewable',
+    ' * artifact until the remaining passes and CPU reference checks land.',
+    ' */',
+    '',
+    'struct ArtCnnNativeParams {',
+    '  source_size: vec2u,',
+    '  output_size: vec2u,',
+    '};',
+    '',
+    '@group(0) @binding(0) var artcnn_in: texture_2d<f32>;',
+    '@group(0) @binding(1) var artcnn_out: texture_storage_2d<rgba16float, write>;',
+    '@group(0) @binding(2) var<uniform> artcnn_params: ArtCnnNativeParams;',
+    '',
+    'fn artcnn_load_pass2(base: vec2u, plane: u32, tile: vec2i) -> vec4<f16> {',
+    '  let plane_offset = select(',
+    '    select(vec2i(0, 1), vec2i(1, 1), plane == 3u),',
+    '    select(vec2i(0, 0), vec2i(1, 0), plane == 1u),',
+    '    plane < 2u,',
+    '  );',
+    '  let source_base = (vec2i(base) + tile - vec2i(1, 1)) * vec2i(2, 2) + plane_offset;',
+    '  let max_coord = vec2i(artcnn_params.source_size) - vec2i(1, 1);',
+    '  let coord = clamp(source_base, vec2i(0, 0), max_coord);',
+    '  return vec4<f16>(textureLoad(artcnn_in, coord, 0));',
+    '}',
+    '',
+    'fn artcnn_store_pass2(pixel: vec2u, value: vec4<f16>) {',
+    '  if (pixel.x < artcnn_params.output_size.x && pixel.y < artcnn_params.output_size.y) {',
+    '    textureStore(artcnn_out, pixel, vec4f(value));',
+    '  }',
+    '}',
+    '',
+    `@compute @workgroup_size(${workgroupX}, ${workgroupY}, ${workgroupZ})`,
+    'fn artcnn_c4f16_pass_02(@builtin(global_invocation_id) global_id: vec3u) {',
+    '  let base = global_id.xy;',
+    '  let output_base = global_id.xy * vec2u(2, 2);',
+    '',
+  ];
+
+  const termsByInput = new Map();
+  for (const result of pass.constantsByResult) {
+    for (const term of result.terms) {
+      termsByInput.set(term.input, term);
+    }
+  }
+  for (const term of [...termsByInput.values()].sort(compareTerms)) {
+    lines.push(
+      `  let ${term.input} = artcnn_load_pass2(base, ${term.plane}u, vec2i(${term.tile[0]}, ${term.tile[1]}));`,
+    );
+  }
+  lines.push('');
+
+  for (const result of pass.constantsByResult) {
+    lines.push(`  var ${result.result} = ${formatWgslF16Vec4(result.bias)};`);
+    for (const term of result.terms) {
+      lines.push(`  ${result.result} += ${formatWgslF16Mat4(term.values)} * ${term.input};`);
+    }
+    lines.push(`  ${result.result} = max(${result.result}, vec4<f16>(f16(0)));`, '');
+  }
+
+  lines.push(
+    '  artcnn_store_pass2(output_base + vec2u(0, 0), result0);',
+    '  artcnn_store_pass2(output_base + vec2u(1, 0), result1);',
+    '  artcnn_store_pass2(output_base + vec2u(0, 1), result2);',
+    '  artcnn_store_pass2(output_base + vec2u(1, 1), result3);',
+    '}',
+  );
+
+  return `${lines.join('\n')}\n`;
+}
+
 export function formatMarkdown(report) {
   const lines = [
     `# ${report.sourceName} Port Report`,
@@ -492,6 +600,14 @@ function formatWgslF16Vec4(values) {
   return `vec4<f16>(${values.map((value) => `f16(${formatNumber(value)})`).join(', ')})`;
 }
 
+function formatWgslF16Mat4(values) {
+  if (values.length !== 16) {
+    throw new Error(`Expected sixteen f16 matrix values, got ${values.length}.`);
+  }
+
+  return `mat4x4<f16>(${values.map((value) => `f16(${formatNumber(value)})`).join(', ')})`;
+}
+
 function formatNumber(value) {
   if (!Number.isFinite(value)) {
     throw new Error(`Cannot emit non-finite WGSL number: ${value}`);
@@ -537,7 +653,12 @@ function getOptionValue(args, optionName) {
 
 function isOptionValue(args, index) {
   const previous = args[index - 1];
-  return previous === '--emit-json' || previous === '--emit-wgsl' || previous === '--emit-pass1-wgsl';
+  return (
+    previous === '--emit-json' ||
+    previous === '--emit-wgsl' ||
+    previous === '--emit-pass1-wgsl' ||
+    previous === '--emit-pass2-wgsl'
+  );
 }
 
 function isMainModule() {

@@ -45,6 +45,9 @@ describe('Neural-Lite ArtCNN staged port', () => {
     expect(ARTCNN_C4F16_PORT_PLAN.nativePassOneShader).toBe(
       'src/upscaler/modes/neural-lite/artcnn-c4f16-native-pass1.wgsl',
     );
+    expect(ARTCNN_C4F16_PORT_PLAN.nativePassTwoShader).toBe(
+      'src/upscaler/modes/neural-lite/artcnn-c4f16-native-pass2.wgsl',
+    );
   });
 
   it('ships a Tint-valid preview WGSL file that is clearly marked non-production', () => {
