@@ -383,7 +383,6 @@ export function generateWgslPassOneExecutable(artifactOrReport) {
     '  artcnn_store_pass1(output_base + vec2u(0, 1), result2);',
     '  artcnn_store_pass1(output_base + vec2u(1, 1), result3);',
     '}',
-    '',
   );
 
   return `${lines.join('\n')}\n`;
