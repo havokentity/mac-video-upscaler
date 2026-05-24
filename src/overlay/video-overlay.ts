@@ -159,9 +159,21 @@ export class VideoOverlay {
   private nextGeneratedFrameAt = 0;
   private gpuTimer: WebGl2GpuTimer | undefined;
   private renderingSuspended = document.hidden;
+  private stationaryFrameDirty = true;
 
   private readonly handleVisibilityChange = (): void => {
     this.setRenderingSuspended(document.hidden);
+  };
+
+  private readonly handleVideoPlaybackStarted = (): void => {
+    this.stationaryFrameDirty = true;
+    this.nextGeneratedFrameAt = 0;
+    this.scheduleFrame();
+  };
+
+  private readonly handleVideoStationaryFrameChanged = (): void => {
+    this.stationaryFrameDirty = true;
+    this.scheduleFrame();
   };
 
   constructor(private readonly video: HTMLVideoElement) {
@@ -186,6 +198,13 @@ export class VideoOverlay {
     this.pruneDuplicateYouTubeOverlays();
     this.syncBounds();
     document.addEventListener('visibilitychange', this.handleVisibilityChange);
+    this.video.addEventListener('play', this.handleVideoPlaybackStarted);
+    this.video.addEventListener('playing', this.handleVideoPlaybackStarted);
+    this.video.addEventListener('pause', this.handleVideoStationaryFrameChanged);
+    this.video.addEventListener('ended', this.handleVideoStationaryFrameChanged);
+    this.video.addEventListener('seeked', this.handleVideoStationaryFrameChanged);
+    this.video.addEventListener('loadeddata', this.handleVideoStationaryFrameChanged);
+    this.video.addEventListener('resize', this.handleVideoStationaryFrameChanged);
 
     const [globalSettings, siteRules] = await Promise.all([loadSettings(), loadSiteRules()]);
     if (this.isDisposed()) {
@@ -239,6 +258,13 @@ export class VideoOverlay {
   destroy(): void {
     this.disposed = true;
     document.removeEventListener('visibilitychange', this.handleVisibilityChange);
+    this.video.removeEventListener('play', this.handleVideoPlaybackStarted);
+    this.video.removeEventListener('playing', this.handleVideoPlaybackStarted);
+    this.video.removeEventListener('pause', this.handleVideoStationaryFrameChanged);
+    this.video.removeEventListener('ended', this.handleVideoStationaryFrameChanged);
+    this.video.removeEventListener('seeked', this.handleVideoStationaryFrameChanged);
+    this.video.removeEventListener('loadeddata', this.handleVideoStationaryFrameChanged);
+    this.video.removeEventListener('resize', this.handleVideoStationaryFrameChanged);
     this.cancelScheduledFrame();
 
     this.gpuTimer?.destroy();
@@ -259,7 +285,19 @@ export class VideoOverlay {
 
     this.cancelScheduledFrame();
 
-    if (this.frameGenerationEnabled || this.video.paused || this.video.ended) {
+    if (this.isVideoStationary()) {
+      if (!this.stationaryFrameDirty) {
+        return;
+      }
+
+      this.animationFrameHandle = requestAnimationFrame((now) => {
+        this.animationFrameHandle = undefined;
+        this.renderFrame(now);
+      });
+      return;
+    }
+
+    if (this.frameGenerationEnabled) {
       this.animationFrameHandle = requestAnimationFrame((now) => {
         this.animationFrameHandle = undefined;
         this.renderFrame(now);
@@ -313,9 +351,10 @@ export class VideoOverlay {
       return;
     }
 
+    const stationary = this.isVideoStationary();
     this.pruneDuplicateYouTubeOverlays();
 
-    if (this.frameGenerationEnabled) {
+    if (this.frameGenerationEnabled && !stationary) {
       const minimumFrameIntervalMs = 1000 / this.frameGenerationTargetFps;
       if (now + 0.5 < this.nextGeneratedFrameAt) {
         this.scheduleFrame();
@@ -325,7 +364,9 @@ export class VideoOverlay {
     }
 
     if (!this.video.isConnected || this.video.readyState === HTMLMediaElement.HAVE_NOTHING) {
-      this.scheduleFrame();
+      if (!stationary) {
+        this.scheduleFrame();
+      }
       return;
     }
 
@@ -339,6 +380,9 @@ export class VideoOverlay {
       }
       if (this.hudVisible) {
         this.renderHud();
+      }
+      if (stationary) {
+        this.stationaryFrameDirty = false;
       }
       this.scheduleFrame();
     } catch (error) {
@@ -452,11 +496,12 @@ export class VideoOverlay {
   }
 
   private schedulePresentationProbe(): void {
+    const requiredRenderedFrames = this.isVideoStationary() ? 1 : PRESENTATION_PROBE_FRAME_DELAY;
     if (
       this.presentationReady ||
       this.presentationProbePending ||
       !this.shouldHideNativeVideo ||
-      this.renderedFrameCount < PRESENTATION_PROBE_FRAME_DELAY ||
+      this.renderedFrameCount < requiredRenderedFrames ||
       this.presentationProbeAttempts >= PRESENTATION_PROBE_MAX_ATTEMPTS
     ) {
       return;
@@ -516,11 +561,13 @@ export class VideoOverlay {
       this.cancelScheduledFrame();
       this.renderedFrameTimestamps = [];
       this.renderedFps = 0;
+      this.stationaryFrameDirty = true;
       this.updateSuspendedStatus();
       return;
     }
 
     this.nextGeneratedFrameAt = 0;
+    this.stationaryFrameDirty = true;
     if (this.video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
       this.renderFrame();
       return;
@@ -535,6 +582,10 @@ export class VideoOverlay {
     if (this.hudVisible) {
       this.renderHud();
     }
+  }
+
+  private isVideoStationary(): boolean {
+    return this.video.paused || this.video.ended;
   }
 
   private pruneDuplicateYouTubeOverlays(): void {
